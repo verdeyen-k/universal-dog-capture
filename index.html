@@ -644,7 +644,7 @@ function updateHUD() {
 // ── Dog spawning ───────────────────────────────────────────────────
 function makeDog(id, emoji, startX, y, speed, dir, worth) {
   const el = document.createElement('div');
-  el.className = worth > 0 ? 'dog cat' : 'dog';
+  el.className = emoji === '🐱' ? 'dog cat' : 'dog';
   el.style.cssText = `left:${startX}px;top:${y}px;--flip:${dir}`;
   el.textContent = emoji;
 
@@ -668,9 +668,9 @@ function spawnDog() {
   const yMin   = walkYMin(), yMax = walkYMax();
   const y      = yMin + Math.random() * Math.max(0, yMax - yMin);
   const startX = dir === 1 ? -62 : window.innerWidth + 22;
-  makeDog(id, emoji, startX, y, speed, dir, 0);
+  makeDog(id, emoji, startX, y, speed, dir, EARN);
   if (isMultiplayer && myRole === 'p1')
-    relay({ ev: 'spawn', id, emoji, x: startX, y, speed, dir, worth: 0 });
+    relay({ ev: 'spawn', id, emoji, x: startX, y, speed, dir, worth: EARN });
 }
 
 function spawnCat() {
