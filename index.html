@@ -497,14 +497,12 @@ body {
   </div>
 </div>
 
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <script src="traps.js"></script>
 <script src="assistants.js"></script>
-<script type="module">
-import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.11.0/firebase-app.js';
-import { getDatabase, ref, set, get, update, push, onValue, onChildAdded, remove }
-  from 'https://www.gstatic.com/firebasejs/12.11.0/firebase-database.js';
-
-const fbApp = initializeApp({
+<script>
+firebase.initializeApp({
   apiKey:            'AIzaSyAsJboNGVuESMhkivllUD0o8MUB5LUCMRQ',
   authDomain:        'kvgames.firebaseapp.com',
   databaseURL:       'https://kvgames-default-rtdb.firebaseio.com',
@@ -513,7 +511,7 @@ const fbApp = initializeApp({
   messagingSenderId: '463308384695',
   appId:             '1:463308384695:web:5d57623ebd52101ad26032',
 });
-const db = getDatabase(fbApp);
+const db = firebase.database();
 // ── Config ─────────────────────────────────────────────────────────
 const DOG_EMOJIS   = ['🐶', '🐩', '🦮', '🐕‍🦺'];
 const MAX_ESCAPED  = 5;
@@ -530,7 +528,7 @@ let gameRunning, lastTs, rafId, spawnTimer, diffTimer, catTimer;
 let spawnDelay, speedMin, speedMax;
 let isMultiplayer = false, myRole = null, gameCode = null;
 let opponentScore = 0, dogIdCounter = 0;
-let eventsListener = null, phaseListener = null;
+let eventsRef = null, phaseRef = null;
 
 // ── DOM refs ───────────────────────────────────────────────────────
 const game    = document.getElementById('game');
@@ -1097,7 +1095,7 @@ function restartGame() {
   if (isMultiplayer) {
     isMultiplayer = false; myRole = null;
     stopListeningEvents();
-    if (gameCode) { remove(ref(db, `dogs/${gameCode}`)); gameCode = null; }
+    if (gameCode) { db.ref(`dogs/${gameCode}`).remove(); gameCode = null; }
     resetLobbyUI();
     $('start-overlay').classList.remove('hidden');
   } else {
@@ -1105,26 +1103,19 @@ function restartGame() {
   }
 }
 
-// Expose functions referenced in HTML onclick attributes (module scope ≠ global)
-window.startGame    = startGame;
-window.showLobby    = showLobby;
-window.showModePanel = showModePanel;
-window.createRoom   = createRoom;
-window.joinRoom     = joinRoom;
-window.restartGame  = restartGame;
-
-// ── Multiplayer (Firebase) ──────────────────────────────────────────
+// ── Multiplayer (Firebase compat) ───────────────────────────────────
 const FB_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const genCode  = () => Array.from({ length: 4 }, () => FB_CHARS[Math.floor(Math.random() * FB_CHARS.length)]).join('');
 
 function relay(payload) {
   if (!gameCode || !isMultiplayer) return;
-  push(ref(db, `dogs/${gameCode}/events`), { ...payload, by: myRole });
+  db.ref(`dogs/${gameCode}/events`).push({ ...payload, by: myRole });
 }
 
 function startListeningEvents() {
   stopListeningEvents();
-  eventsListener = onChildAdded(ref(db, `dogs/${gameCode}/events`), snap => {
+  eventsRef = db.ref(`dogs/${gameCode}/events`);
+  eventsRef.on('child_added', snap => {
     const msg = snap.val();
     if (msg.by === myRole) return;
     handleRelay(msg);
@@ -1132,8 +1123,8 @@ function startListeningEvents() {
 }
 
 function stopListeningEvents() {
-  if (eventsListener) { eventsListener(); eventsListener = null; }
-  if (phaseListener)  { phaseListener();  phaseListener  = null; }
+  if (eventsRef) { eventsRef.off(); eventsRef = null; }
+  if (phaseRef)  { phaseRef.off();  phaseRef  = null; }
 }
 
 function handleRelay(msg) {
@@ -1204,7 +1195,7 @@ function showModePanel() {
   $('code-display').classList.add('hidden');
   $('create-btn').disabled = false;
   stopListeningEvents();
-  if (gameCode) { remove(ref(db, `dogs/${gameCode}`)); gameCode = null; }
+  if (gameCode) { db.ref(`dogs/${gameCode}`).remove(); gameCode = null; }
 }
 
 function resetLobbyUI() {
@@ -1226,13 +1217,14 @@ async function createRoom() {
   $('lobby-error').textContent = '';
   const code = genCode();
   gameCode = code; myRole = 'p1';
-  await set(ref(db, `dogs/${code}`), { phase: 'waiting' });
+  await db.ref(`dogs/${code}`).set({ phase: 'waiting' });
   $('room-code').textContent = code;
   $('code-display').classList.remove('hidden');
 
-  phaseListener = onValue(ref(db, `dogs/${code}/phase`), snap => {
+  phaseRef = db.ref(`dogs/${code}/phase`);
+  phaseRef.on('value', snap => {
     if (snap.val() !== 'active') return;
-    if (phaseListener) { phaseListener(); phaseListener = null; }
+    phaseRef.off(); phaseRef = null;
     isMultiplayer = true;
     startListeningEvents();
     $('start-overlay').classList.add('hidden');
@@ -1244,11 +1236,11 @@ async function joinRoom() {
   const code = $('join-input').value.trim().toUpperCase();
   if (code.length !== 4) { showLobbyError('Enter a 4-character code'); return; }
   showLobbyError('');
-  const snap = await get(ref(db, `dogs/${code}`));
-  if (!snap.exists())                   { showLobbyError('Room not found');            return; }
-  if (snap.val().phase !== 'waiting')   { showLobbyError('Room is full or in progress'); return; }
+  const snap = await db.ref(`dogs/${code}`).once('value');
+  if (!snap.exists())                 { showLobbyError('Room not found');               return; }
+  if (snap.val().phase !== 'waiting') { showLobbyError('Room is full or in progress');  return; }
   gameCode = code; myRole = 'p2';
-  await update(ref(db, `dogs/${code}`), { phase: 'active' });
+  await db.ref(`dogs/${code}`).update({ phase: 'active' });
   isMultiplayer = true;
   startListeningEvents();
   $('start-overlay').classList.add('hidden');
