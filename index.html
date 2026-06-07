@@ -324,6 +324,7 @@ body {
   padding: 20px;
 }
 
+.hidden { display: none; }
 .overlay.hidden { display: none; }
 
 .overlay h1 { font-size: 42px; margin-bottom: 14px; }
@@ -1095,7 +1096,7 @@ function restartGame() {
   if (isMultiplayer) {
     isMultiplayer = false; myRole = null;
     stopListeningEvents();
-    if (gameCode) { db.ref(`dogs/${gameCode}`).remove(); gameCode = null; }
+    if (gameCode) { db.ref(`chick/dogs/${gameCode}`).remove(); gameCode = null; }
     resetLobbyUI();
     $('start-overlay').classList.remove('hidden');
   } else {
@@ -1109,12 +1110,12 @@ const genCode  = () => Array.from({ length: 4 }, () => FB_CHARS[Math.floor(Math.
 
 function relay(payload) {
   if (!gameCode || !isMultiplayer) return;
-  db.ref(`dogs/${gameCode}/events`).push({ ...payload, by: myRole });
+  db.ref(`chick/dogs/${gameCode}/events`).push({ ...payload, by: myRole });
 }
 
 function startListeningEvents() {
   stopListeningEvents();
-  eventsRef = db.ref(`dogs/${gameCode}/events`);
+  eventsRef = db.ref(`chick/dogs/${gameCode}/events`);
   eventsRef.on('child_added', snap => {
     const msg = snap.val();
     if (msg.by === myRole) return;
@@ -1195,7 +1196,7 @@ function showModePanel() {
   $('code-display').classList.add('hidden');
   $('create-btn').disabled = false;
   stopListeningEvents();
-  if (gameCode) { db.ref(`dogs/${gameCode}`).remove(); gameCode = null; }
+  if (gameCode) { db.ref(`chick/dogs/${gameCode}`).remove(); gameCode = null; }
 }
 
 function resetLobbyUI() {
@@ -1217,11 +1218,11 @@ async function createRoom() {
   $('lobby-error').textContent = '';
   const code = genCode();
   gameCode = code; myRole = 'p1';
-  await db.ref(`dogs/${code}`).set({ phase: 'waiting' });
+  await db.ref(`chick/dogs/${code}`).set({ phase: 'waiting' });
   $('room-code').textContent = code;
   $('code-display').classList.remove('hidden');
 
-  phaseRef = db.ref(`dogs/${code}/phase`);
+  phaseRef = db.ref(`chick/dogs/${code}/phase`);
   phaseRef.on('value', snap => {
     if (snap.val() !== 'active') return;
     phaseRef.off(); phaseRef = null;
@@ -1236,11 +1237,11 @@ async function joinRoom() {
   const code = $('join-input').value.trim().toUpperCase();
   if (code.length !== 4) { showLobbyError('Enter a 4-character code'); return; }
   showLobbyError('');
-  const snap = await db.ref(`dogs/${code}`).once('value');
+  const snap = await db.ref(`chick/dogs/${code}`).once('value');
   if (!snap.exists())                 { showLobbyError('Room not found');               return; }
   if (snap.val().phase !== 'waiting') { showLobbyError('Room is full or in progress');  return; }
   gameCode = code; myRole = 'p2';
-  await db.ref(`dogs/${code}`).update({ phase: 'active' });
+  await db.ref(`chick/dogs/${code}`).update({ phase: 'active' });
   isMultiplayer = true;
   startListeningEvents();
   $('start-overlay').classList.add('hidden');
