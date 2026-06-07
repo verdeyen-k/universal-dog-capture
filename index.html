@@ -1,0 +1,1261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Universal Dog Capture</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 100%; height: 100%; overflow: hidden; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  user-select: none;
+}
+
+#game {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  background: linear-gradient(to bottom,
+    #020210 0%,
+    #080828 25%,
+    #10103a 55%,
+    #18102e 80%,
+    #0e0820 100%);
+  overflow: hidden;
+}
+
+/* Stars */
+#game::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(1px 1px at 8%  6%,  #fff, transparent),
+    radial-gradient(1px 1px at 22% 11%, #fff, transparent),
+    radial-gradient(1px 1px at 38%  4%, rgba(255,255,255,.7), transparent),
+    radial-gradient(1px 1px at 53% 14%, #fff, transparent),
+    radial-gradient(1px 1px at 67%  8%, rgba(255,255,255,.5), transparent),
+    radial-gradient(1px 1px at 81%  3%, #fff, transparent),
+    radial-gradient(1px 1px at 93% 18%, rgba(255,255,255,.8), transparent),
+    radial-gradient(1px 1px at 14% 28%, rgba(255,255,255,.4), transparent),
+    radial-gradient(1px 1px at 46% 22%, rgba(255,255,255,.6), transparent),
+    radial-gradient(1px 1px at 72% 19%, rgba(255,255,255,.5), transparent),
+    radial-gradient(1.5px 1.5px at 31% 9%, #fff, transparent),
+    radial-gradient(1.5px 1.5px at 88% 12%, #fff, transparent);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ── HUD ── */
+#hud {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 52px;
+  background: rgba(0,0,0,.68);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  padding: 0 24px;
+  gap: 24px;
+  z-index: 100;
+  border-bottom: 1px solid rgba(255,255,255,.08);
+}
+
+.hud-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: #ffd700;
+  letter-spacing: .3px;
+  margin-right: 4px;
+}
+
+.hud-stat { font-size: 15px; color: rgba(255,255,255,.9); }
+.hud-stat strong { color: #fff; }
+#hud-escaped-wrap strong { color: #ff7043; }
+
+/* ── Shop ── */
+#shop {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 68px;
+  background: rgba(0,0,0,.72);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  padding: 0 24px;
+  gap: 12px;
+  z-index: 100;
+  border-top: 1px solid rgba(255,255,255,.08);
+}
+
+.shop-label {
+  color: rgba(255,255,255,.35);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  min-width: 36px;
+}
+
+.trap-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  background: rgba(255,255,255,.07);
+  border: 1.5px solid rgba(255,255,255,.14);
+  border-radius: 10px;
+  cursor: pointer;
+  color: #fff;
+  transition: background .14s, border-color .14s, transform .12s;
+}
+
+.trap-btn:hover {
+  background: rgba(255,255,255,.14);
+  border-color: rgba(255,255,255,.28);
+  transform: translateY(-2px);
+}
+
+.trap-btn.selected {
+  border-color: #ffd700;
+  background: rgba(255,215,0,.16);
+  box-shadow: 0 0 12px rgba(255,215,0,.25);
+}
+
+.trap-btn.cant-afford { opacity: .38; cursor: not-allowed; }
+.trap-btn.cant-afford:hover { transform: none; }
+
+@keyframes shake {
+  0%,100% { transform: translateX(0); }
+  15%     { transform: translateX(-7px); }
+  35%     { transform: translateX(7px); }
+  55%     { transform: translateX(-5px); }
+  75%     { transform: translateX(5px); }
+}
+.trap-btn.shaking { animation: shake .36s ease; }
+
+.trap-emoji { font-size: 24px; line-height: 1; }
+.trap-info { display: flex; flex-direction: column; gap: 1px; }
+.trap-name { font-size: 12px; color: rgba(255,255,255,.72); }
+.trap-cost { font-size: 13px; color: #4dff91; font-weight: 600; }
+.trap-desc { font-size: 10px; color: rgba(255,255,255,.38); }
+
+/* ── Buildings ── */
+.building {
+  position: absolute;
+  background: #07071c;
+  border-top: 2px solid #0e0e2a;
+  z-index: 10;
+}
+
+.bwin {
+  position: absolute;
+  width: 7px;
+  height: 9px;
+  border-radius: 1px;
+}
+
+/* ── Street ── */
+#street {
+  position: absolute;
+  left: 0; right: 0;
+  height: 3px;
+  background: linear-gradient(to right, transparent, #1e1e44 8%, #1e1e44 92%, transparent);
+  z-index: 11;
+}
+
+/* ── Dogs ── */
+.dog {
+  position: absolute;
+  font-size: 44px;
+  line-height: 1;
+  cursor: pointer;
+  z-index: 50;
+  transform: scaleX(var(--flip,1));
+  transform-origin: center center;
+}
+
+.dog:hover { filter: brightness(1.3) drop-shadow(0 0 8px rgba(255,215,0,.55)); }
+
+.dog.cat {
+  font-size: 52px;
+  filter: drop-shadow(0 0 8px rgba(255,215,0,.45));
+}
+.dog.cat:hover { filter: brightness(1.3) drop-shadow(0 0 12px rgba(255,215,0,.8)); }
+
+.dog.trapped { animation: dog-wiggle .45s ease-in-out infinite; }
+
+@keyframes dog-wiggle {
+  0%,100% { transform: scaleX(var(--flip,1)) rotate(-8deg); }
+  50%     { transform: scaleX(var(--flip,1)) rotate(8deg); }
+}
+
+.dog.capturing {
+  animation: dog-pop .3s ease-out forwards;
+  pointer-events: none;
+}
+
+@keyframes dog-pop {
+  0%   { transform: scale(1)   scaleX(var(--flip,1)); opacity: 1; }
+  50%  { transform: scale(1.9) scaleX(var(--flip,1)); opacity: .8; }
+  100% { transform: scale(0)   scaleX(var(--flip,1)); opacity: 0; }
+}
+
+/* ── Countdown ring ── */
+.cring {
+  position: absolute;
+  inset: -11px;
+  border-radius: 50%;
+  background: conic-gradient(
+    rgba(255,107,53,.88) calc(var(--pct,100) * 1%),
+    rgba(255,255,255,.1) 0
+  );
+  z-index: -1;
+  pointer-events: none;
+  display: none;
+}
+
+.dog.trapped .cring { display: block; }
+
+/* ── Placed traps ── */
+.trap-placed {
+  position: absolute;
+  font-size: 30px;
+  line-height: 1;
+  z-index: 41;
+  transform: translate(-50%,-50%);
+  pointer-events: none;
+  filter: drop-shadow(0 2px 5px rgba(0,0,0,.7));
+  transition: opacity .4s;
+}
+
+/* ── Bunny trap ── */
+.trap-bunny {
+  z-index: 45;
+  font-size: 34px;
+  animation: bunny-hop .55s ease-in-out infinite;
+}
+
+@keyframes bunny-hop {
+  0%,100% { transform: translate(-50%,-50%); }
+  38%     { transform: translate(-50%, calc(-50% - 15px)) scaleY(1.12); }
+  68%     { transform: translate(-50%, calc(-50% + 5px))  scaleY(0.88); }
+}
+
+.bunny-col {
+  position: absolute;
+  width: 110px;
+  background: rgba(255,192,203,.05);
+  border-left: 1px dashed rgba(255,192,203,.2);
+  border-right: 1px dashed rgba(255,192,203,.2);
+  pointer-events: none;
+  z-index: 9;
+  transform: translateX(-50%);
+  transition: opacity .4s;
+}
+
+/* ── Hydrant trap ── */
+.trap-hydrant { z-index: 43; font-size: 32px; }
+
+.trap-hydrant.active {
+  animation: hydrant-pulse .35s ease-in-out infinite;
+}
+
+@keyframes hydrant-pulse {
+  0%,100% { filter: drop-shadow(0 0 6px rgba(100,200,255,.9))  drop-shadow(0 2px 5px rgba(0,0,0,.7)); transform: translate(-50%,-50%); }
+  50%      { filter: drop-shadow(0 0 20px rgba(120,220,255,1)) drop-shadow(0 2px 5px rgba(0,0,0,.7)); transform: translate(-50%,-57%); }
+}
+
+.hydrant-aoe {
+  position: absolute;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(100,200,255,.13) 0%, rgba(100,200,255,.04) 65%, transparent 100%);
+  border: 2px solid rgba(120,220,255,.45);
+  pointer-events: none;
+  z-index: 38;
+  transform: translate(-50%,-50%);
+  animation: aoe-pulse .75s ease-in-out infinite;
+  transition: opacity .35s;
+}
+
+@keyframes aoe-pulse {
+  0%,100% { transform: translate(-50%,-50%) scale(1);    border-color: rgba(120,220,255,.45); }
+  50%      { transform: translate(-50%,-50%) scale(1.05); border-color: rgba(160,240,255,.75); }
+}
+
+.spray-particle {
+  position: absolute;
+  font-size: 18px;
+  z-index: 60;
+  pointer-events: none;
+  transform: translate(-50%,-50%);
+  animation: spray-out .65s ease-out forwards;
+}
+
+@keyframes spray-out {
+  0%   { transform: translate(-50%,-50%) scale(1);   opacity: 1; }
+  100% { transform: translate(calc(-50% + var(--tx)), calc(-50% + var(--ty))) scale(.5); opacity: 0; }
+}
+
+/* ── Ghost trap ── */
+#ghost {
+  position: fixed;
+  font-size: 30px;
+  line-height: 1;
+  z-index: 200;
+  transform: translate(-50%,-50%);
+  pointer-events: none;
+  opacity: .6;
+  display: none;
+}
+
+/* ── Overlays ── */
+.overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,.84);
+  z-index: 500;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  text-align: center;
+  padding: 20px;
+}
+
+.overlay.hidden { display: none; }
+
+.overlay h1 { font-size: 42px; margin-bottom: 14px; }
+.overlay p  { font-size: 16px; color: rgba(255,255,255,.65); max-width: 440px; line-height: 1.6; margin-bottom: 28px; }
+.stat       { font-size: 21px; margin-bottom: 8px; }
+.stat.gold  { color: #ffd700; }
+.stat.green { color: #4dff91; margin-bottom: 26px; }
+
+.big-btn {
+  padding: 13px 44px;
+  font-size: 19px;
+  font-weight: 700;
+  background: #ffd700;
+  color: #111;
+  border: none;
+  border-radius: 14px;
+  cursor: pointer;
+  transition: background .14s, transform .12s, box-shadow .12s;
+}
+.big-btn:hover {
+  background: #ffe84d;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(255,215,0,.38);
+}
+
+/* ── Shop separator ── */
+.shop-sep {
+  width: 1px;
+  height: 36px;
+  background: rgba(255,255,255,.14);
+  margin: 0 6px;
+  flex-shrink: 0;
+}
+
+/* ── Assistants ── */
+.assistant-placed {
+  position: absolute;
+  font-size: 30px;
+  line-height: 1;
+  z-index: 46;
+  transform: translate(-50%,-50%);
+  pointer-events: none;
+  filter: drop-shadow(0 2px 6px rgba(0,0,0,.6));
+  animation: asst-pop .28s ease-out both;
+}
+
+@keyframes asst-pop {
+  0%   { transform: translate(-50%,-50%) scale(.4); opacity: 0; }
+  65%  { transform: translate(-50%,-50%) scale(1.2); opacity: 1; }
+  100% { transform: translate(-50%,-50%) scale(1); }
+}
+
+.assistant-placed.destroying {
+  animation: asst-destroy .35s ease-out forwards;
+}
+
+@keyframes asst-destroy {
+  0%   { transform: translate(-50%,-50%) scale(1); opacity: 1; }
+  100% { transform: translate(-50%,-50%) scale(2.8); opacity: 0; }
+}
+
+/* Flash on a trap that just received a flower buff */
+@keyframes trap-buff-flash {
+  0%,100% { filter: drop-shadow(0 2px 5px rgba(0,0,0,.7)); }
+  45%     { filter: drop-shadow(0 0 14px rgba(255,220,80,.9)) drop-shadow(0 2px 5px rgba(0,0,0,.7)); }
+}
+.trap-buffed { animation: trap-buff-flash .9s ease-in-out; }
+
+/* ── Multiplayer lobby ── */
+.mode-btns { display: flex; gap: 14px; }
+.secondary-btn {
+  background: rgba(255,255,255,.1);
+  color: #fff;
+  border: 1.5px solid rgba(255,255,255,.25);
+}
+.secondary-btn:hover { background: rgba(255,255,255,.2); box-shadow: none; }
+
+#lobby-panel { width: 320px; }
+.lobby-card {
+  background: rgba(255,255,255,.07);
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 10px;
+}
+.lobby-card-title { font-size: 13px; color: rgba(255,255,255,.5); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px; }
+.code-value { font-size: 40px; letter-spacing: 10px; color: #ffd700; font-weight: 700; text-align: center; margin: 10px 0 4px; }
+.waiting-text { font-size: 13px; color: rgba(255,255,255,.45); text-align: center; }
+.or-row { text-align: center; color: rgba(255,255,255,.3); font-size: 14px; margin: 6px 0; }
+.code-input {
+  width: 100%; padding: 10px; font-size: 24px; letter-spacing: 8px;
+  text-align: center; text-transform: uppercase;
+  background: rgba(255,255,255,.08); border: 1.5px solid rgba(255,255,255,.18);
+  border-radius: 8px; color: #fff; outline: none; margin-bottom: 10px;
+  display: block;
+}
+.code-input:focus { border-color: rgba(255,215,0,.5); }
+.sm-btn {
+  width: 100%; padding: 10px; font-size: 15px; font-weight: 600;
+  background: rgba(255,215,0,.15); border: 1.5px solid rgba(255,215,0,.35);
+  border-radius: 9px; color: #ffd700; cursor: pointer; transition: all .14s;
+  margin-bottom: 6px;
+}
+.sm-btn:hover { background: rgba(255,215,0,.3); }
+.sm-btn:disabled { opacity: .4; cursor: not-allowed; }
+.back-link { font-size: 13px; color: rgba(255,255,255,.38); cursor: pointer; margin-top: 10px; display: block; text-align: center; }
+.back-link:hover { color: rgba(255,255,255,.65); }
+.lobby-error { color: #ff6b6b; font-size: 13px; margin-top: 6px; text-align: center; min-height: 18px; }
+.go-opp-row { font-size: 18px; margin-bottom: 8px; }
+.go-result  { font-size: 24px; font-weight: 700; margin-bottom: 20px; color: #ffd700; }
+</style>
+</head>
+<body>
+<div id="game">
+  <div id="hud">
+    <span class="hud-title">🐾 Universal Dog Capture</span>
+    <span class="hud-stat">Score: <strong id="hud-score">0</strong></span>
+    <span class="hud-stat">💰 $<strong id="hud-money">30</strong></span>
+    <span class="hud-stat" id="hud-escaped-wrap">Escaped: <strong id="hud-escaped">0</strong>/<span id="hud-limit">5</span></span>
+    <span class="hud-stat" id="hud-opp" style="display:none">👤 Opp: <strong id="hud-opp-score">0</strong></span>
+  </div>
+
+  <div id="street"></div>
+
+  <div id="shop">
+    <span class="shop-label">Traps</span>
+  </div>
+
+  <div id="ghost"></div>
+
+  <!-- Start screen -->
+  <div id="start-overlay" class="overlay">
+    <h1>🐾 Universal Dog Capture</h1>
+
+    <div id="mode-panel">
+      <p>Dogs are running wild through the city! Click them to capture before they escape. Buy traps to slow them down — but you still need to click the dog to catch it!</p>
+      <div class="mode-btns">
+        <button class="big-btn" onclick="startGame()">Solo</button>
+        <button class="big-btn secondary-btn" onclick="showLobby()">👥 2 Players</button>
+      </div>
+    </div>
+
+    <div id="lobby-panel" class="hidden">
+      <div class="lobby-card">
+        <div class="lobby-card-title">Create a game</div>
+        <button class="sm-btn" id="create-btn" onclick="createRoom()">Generate Code</button>
+        <div id="code-display" class="hidden">
+          <div class="code-value" id="room-code">····</div>
+          <div class="waiting-text">⏳ Waiting for opponent…</div>
+        </div>
+      </div>
+      <div class="or-row">— or —</div>
+      <div class="lobby-card">
+        <div class="lobby-card-title">Join a game</div>
+        <input id="join-input" class="code-input" maxlength="4" placeholder="XXXX" oninput="this.value=this.value.toUpperCase()">
+        <button class="sm-btn" onclick="joinRoom()">Join</button>
+        <div id="lobby-error" class="lobby-error"></div>
+      </div>
+      <div class="back-link" onclick="showModePanel()">← Back</div>
+    </div>
+  </div>
+
+  <!-- Game over -->
+  <div id="gameover-overlay" class="overlay hidden">
+    <h1>🐕 Dogs Escaped!</h1>
+    <div class="stat gold">Score: <span id="go-score">0</span></div>
+    <div class="stat green">Total earned: $<span id="go-money">0</span></div>
+    <div class="go-opp-row hidden" id="go-opp-row">Opponent caught: <strong id="go-opp-score">0</strong></div>
+    <div class="go-result hidden" id="go-result"></div>
+    <button class="big-btn" onclick="restartGame()">Play Again</button>
+  </div>
+</div>
+
+<script src="traps.js"></script>
+<script src="assistants.js"></script>
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.11.0/firebase-app.js';
+import { getDatabase, ref, set, get, update, push, onValue, onChildAdded, remove }
+  from 'https://www.gstatic.com/firebasejs/12.11.0/firebase-database.js';
+
+const fbApp = initializeApp({
+  apiKey:            'AIzaSyAsJboNGVuESMhkivllUD0o8MUB5LUCMRQ',
+  authDomain:        'kvgames.firebaseapp.com',
+  databaseURL:       'https://kvgames-default-rtdb.firebaseio.com',
+  projectId:         'kvgames',
+  storageBucket:     'kvgames.firebasestorage.app',
+  messagingSenderId: '463308384695',
+  appId:             '1:463308384695:web:5d57623ebd52101ad26032',
+});
+const db = getDatabase(fbApp);
+// ── Config ─────────────────────────────────────────────────────────
+const DOG_EMOJIS   = ['🐶', '🐩', '🦮', '🐕‍🦺'];
+const MAX_ESCAPED  = 5;
+const HUD_H        = 52;
+const SHOP_H       = 68;
+const EARN         = 10;
+const CAT_EARN     = 50;
+const CAT_INTERVAL = 14000;
+
+// ── State ──────────────────────────────────────────────────────────
+let score, money, escaped, totalEarned;
+let dogs, placedTraps, placingTrap, placedAssistants;
+let gameRunning, lastTs, rafId, spawnTimer, diffTimer, catTimer;
+let spawnDelay, speedMin, speedMax;
+let isMultiplayer = false, myRole = null, gameCode = null;
+let opponentScore = 0, dogIdCounter = 0;
+let eventsListener = null, phaseListener = null;
+
+// ── DOM refs ───────────────────────────────────────────────────────
+const game    = document.getElementById('game');
+const ghostEl = document.getElementById('ghost');
+const $ = id  => document.getElementById(id);
+
+// ── Layout helpers ─────────────────────────────────────────────────
+const buildingH = () => Math.floor((window.innerHeight - HUD_H - SHOP_H) * 0.30);
+const walkYMin  = () => HUD_H + 20;
+const walkYMax  = () => window.innerHeight - SHOP_H - buildingH() - 15;
+
+// ── City ───────────────────────────────────────────────────────────
+function buildCity() {
+  game.querySelectorAll('.building').forEach(b => b.remove());
+  const W    = window.innerWidth;
+  const maxH = buildingH();
+  const streetY = window.innerHeight - SHOP_H - 2;
+  $('street').style.top = streetY + 'px';
+
+  let x = -20;
+  while (x < W + 70) {
+    const w = 36 + Math.floor(Math.random() * 88);
+    const h = 32 + Math.floor(Math.random() * (maxH - 32));
+    const b = document.createElement('div');
+    b.className = 'building';
+    b.style.cssText = `left:${x}px;bottom:${SHOP_H}px;width:${w}px;height:${h}px`;
+
+    for (let wy = 10; wy < h - 14; wy += 17) {
+      for (let wx = 6; wx < w - 8; wx += 14) {
+        if (Math.random() < .55) {
+          const win = document.createElement('div');
+          win.className = 'bwin';
+          const lit = Math.random() < .28 ? 0 : .2 + Math.random() * .55;
+          win.style.cssText = `left:${wx}px;top:${wy}px;background:rgba(255,240,110,${lit})`;
+          b.appendChild(win);
+        }
+      }
+    }
+    game.appendChild(b);
+    x += w + Math.floor(Math.random() * 10) - 2;
+  }
+}
+
+// ── Shop ───────────────────────────────────────────────────────────
+function makeShopBtn(key, def, onclick) {
+  const btn = document.createElement('div');
+  btn.className = 'trap-btn';
+  btn.id = 'btn-' + key;
+  btn.onclick = onclick;
+  btn.innerHTML =
+    `<span class="trap-emoji">${def.emoji}</span>` +
+    `<div class="trap-info">` +
+      `<span class="trap-name">${def.label}</span>` +
+      `<span class="trap-cost">$${def.cost}</span>` +
+      `<span class="trap-desc">${def.desc}</span>` +
+    `</div>`;
+  return btn;
+}
+
+function buildShop() {
+  const shop = $('shop');
+  shop.innerHTML = '<span class="shop-label">Traps</span>';
+
+  for (const [key, def] of Object.entries(TRAPS))
+    shop.appendChild(makeShopBtn(key, def, () => selectTrap(key)));
+
+  const sep = document.createElement('div');
+  sep.className = 'shop-sep';
+  shop.appendChild(sep);
+
+  const asstLabel = document.createElement('span');
+  asstLabel.className = 'shop-label';
+  asstLabel.textContent = 'Assistants';
+  shop.appendChild(asstLabel);
+
+  for (const [key, def] of Object.entries(ASSISTANTS))
+    shop.appendChild(makeShopBtn(key, def, () => selectAssistant(key)));
+}
+
+// ── HUD ────────────────────────────────────────────────────────────
+function escapeLimit() {
+  if (isMultiplayer) return MAX_ESCAPED;
+  return MAX_ESCAPED + placedAssistants.filter(a => a.type === 'carpet').length;
+}
+
+function updateHUD() {
+  $('hud-score').textContent   = score;
+  $('hud-money').textContent   = money;
+  $('hud-escaped').textContent = escaped;
+  $('hud-limit').textContent   = escapeLimit();
+
+  const oppEl = $('hud-opp');
+  if (isMultiplayer) {
+    oppEl.style.display = '';
+    $('hud-opp-score').textContent = opponentScore;
+  } else {
+    oppEl.style.display = 'none';
+  }
+
+  for (const [key, def] of Object.entries(TRAPS)) {
+    const btn = $('btn-' + key);
+    btn.classList.toggle('cant-afford', money < def.cost);
+    btn.classList.toggle('selected',    !!placingTrap && placingTrap.key === key && placingTrap.category === 'trap');
+  }
+  for (const [key, def] of Object.entries(ASSISTANTS)) {
+    const btn = $('btn-' + key);
+    btn.classList.toggle('cant-afford', money < def.cost);
+    btn.classList.toggle('selected',    !!placingTrap && placingTrap.key === key && placingTrap.category === 'assistant');
+  }
+}
+
+// ── Dog spawning ───────────────────────────────────────────────────
+function makeDog(id, emoji, startX, y, speed, dir, worth) {
+  const el = document.createElement('div');
+  el.className = worth > 0 ? 'dog cat' : 'dog';
+  el.style.cssText = `left:${startX}px;top:${y}px;--flip:${dir}`;
+  el.textContent = emoji;
+
+  const ring = document.createElement('div');
+  ring.className = 'cring';
+  el.appendChild(ring);
+
+  const dog = { id, el, ring, x: startX, y, speed, dir, state: 'walking', timerId: null, holdStart: 0, holdDuration: 0, worth };
+  el.addEventListener('click', e => { e.stopPropagation(); onDogClicked(dog); });
+  dogs.push(dog);
+  game.appendChild(el);
+  return dog;
+}
+
+function spawnDog() {
+  if (!gameRunning) return;
+  const id     = ++dogIdCounter;
+  const emoji  = DOG_EMOJIS[Math.floor(Math.random() * DOG_EMOJIS.length)];
+  const dir    = Math.random() < .5 ? 1 : -1;
+  const speed  = speedMin + Math.random() * (speedMax - speedMin);
+  const yMin   = walkYMin(), yMax = walkYMax();
+  const y      = yMin + Math.random() * Math.max(0, yMax - yMin);
+  const startX = dir === 1 ? -62 : window.innerWidth + 22;
+  makeDog(id, emoji, startX, y, speed, dir, 0);
+  if (isMultiplayer && myRole === 'p1')
+    relay({ ev: 'spawn', id, emoji, x: startX, y, speed, dir, worth: 0 });
+}
+
+function spawnCat() {
+  if (!gameRunning) return;
+  const id     = ++dogIdCounter;
+  const dir    = Math.random() < .5 ? 1 : -1;
+  const speed  = speedMin * 1.2 + Math.random() * (speedMax - speedMin) * .7;
+  const yMin   = walkYMin(), yMax = walkYMax();
+  const y      = yMin + Math.random() * Math.max(0, yMax - yMin);
+  const startX = dir === 1 ? -62 : window.innerWidth + 22;
+  makeDog(id, '🐱', startX, y, speed, dir, CAT_EARN);
+  if (isMultiplayer && myRole === 'p1')
+    relay({ ev: 'spawn', id, emoji: '🐱', x: startX, y, speed, dir, worth: CAT_EARN });
+}
+
+// ── Game loop ──────────────────────────────────────────────────────
+function gameLoop(ts) {
+  if (!gameRunning) return;
+  if (!lastTs) lastTs = ts;
+  const dt = Math.min((ts - lastTs) / 1000, 0.1);
+  lastTs = ts;
+
+  for (const dog of [...dogs]) {
+    if (dog.state === 'walking') {
+      dog.x += dog.speed * dog.dir * dt;
+      dog.el.style.left = dog.x + 'px';
+
+      for (const trap of placedTraps) {
+        if (trap.type === 'bunny') continue;
+        if (trap.type === 'hydrant') {
+          if (!trap.active && trap.uses > 0 && overlaps(dog.el, trap.el)) activateHydrant(trap, dog);
+          continue;
+        }
+        if (trap.uses > 0 && overlaps(dog.el, trap.el)) {
+          immobilize(dog, trap);
+          break;
+        }
+      }
+
+      // Assistant collisions — walking dogs destroy assistants on contact
+      for (const asst of [...placedAssistants]) {
+        if (overlapsTight(dog.el, asst.el)) destroyAssistant(asst);
+      }
+
+      if (dog.state === 'walking') {
+        const W = window.innerWidth;
+        if ((dog.dir > 0 && dog.x > W + 80) || (dog.dir < 0 && dog.x < -80)) {
+          onDogEscaped(dog);
+        }
+      }
+
+    } else if (dog.state === 'trapped') {
+      const elapsed = (Date.now() - dog.holdStart) / 1000;
+      const pct = Math.max(0, 100 - (elapsed / dog.holdDuration) * 100);
+      dog.ring.style.setProperty('--pct', pct);
+    }
+  }
+
+  // ── Bunny AI: hop toward nearest dog in column ──
+  for (const trap of placedTraps) {
+    if (trap.type !== 'bunny' || trap.uses <= 0) continue;
+    let target = null, minDist = Infinity;
+    for (const dog of dogs) {
+      if (dog.state !== 'walking') continue;
+      if (Math.abs(dog.x + 22 - trap.x) < trap.range) {
+        const dy = Math.abs(dog.y - trap.y);
+        if (dy < minDist) { minDist = dy; target = dog; }
+      }
+    }
+    if (target) {
+      const dy = target.y - trap.y;
+      const step = trap.speed * dt;
+      trap.y += Math.sign(dy) * Math.min(Math.abs(dy), step);
+      trap.el.style.top = trap.y + 'px';
+      if (overlaps(trap.el, target.el)) immobilize(target, trap);
+    }
+  }
+
+  // ── Hydrant AoE: catch dogs entering the spray zone ──
+  const nowMs = Date.now();
+  for (const trap of [...placedTraps]) {
+    if (trap.type !== 'hydrant' || !trap.active) continue;
+    if (nowMs > trap.activeUntil) {
+      trap.active = false;
+      if (trap.aoeEl) {
+        trap.aoeEl.style.opacity = '0';
+        setTimeout(() => { trap.aoeEl && trap.aoeEl.remove(); trap.aoeEl = null; }, 380);
+      }
+      trap.el.style.opacity = '0.2';
+      setTimeout(() => { trap.el.remove(); placedTraps = placedTraps.filter(t => t !== trap); }, 500);
+    } else {
+      for (const dog of dogs) {
+        if (dog.state === 'walking' && isInRadius(dog, trap)) immobilize(dog, trap, false);
+      }
+    }
+  }
+
+  rafId = requestAnimationFrame(gameLoop);
+}
+
+function overlaps(elA, elB) {
+  const a = elA.getBoundingClientRect();
+  const b = elB.getBoundingClientRect();
+  const p = 14;
+  return a.right > b.left - p && a.left < b.right + p &&
+         a.bottom > b.top - p && a.top < b.bottom + p;
+}
+
+function overlapsTight(elA, elB) {
+  const a = elA.getBoundingClientRect();
+  const b = elB.getBoundingClientRect();
+  return a.right > b.left && a.left < b.right && a.bottom > b.top && a.top < b.bottom;
+}
+
+function isInRadius(dog, trap) {
+  const dx = dog.x + 22 - trap.x;
+  const dy = dog.y + 22 - trap.y;
+  return Math.sqrt(dx * dx + dy * dy) < trap.radius;
+}
+
+function activateHydrant(trap, triggerDog) {
+  trap.active      = true;
+  trap.uses        = 0;
+  trap.activeUntil = Date.now() + trap.sprayDuration;
+  trap.el.classList.add('active');
+
+  const aoeEl = document.createElement('div');
+  aoeEl.className = 'hydrant-aoe';
+  aoeEl.style.left   = trap.x + 'px';
+  aoeEl.style.top    = trap.y + 'px';
+  aoeEl.style.width  = (trap.radius * 2) + 'px';
+  aoeEl.style.height = (trap.radius * 2) + 'px';
+  game.appendChild(aoeEl);
+  trap.aoeEl = aoeEl;
+
+  spawnSprayParticles(trap.x, trap.y);
+
+  for (const dog of dogs) {
+    if (dog.state !== 'walking') continue;
+    if (dog === triggerDog || isInRadius(dog, trap)) immobilize(dog, trap, false);
+  }
+}
+
+function spawnSprayParticles(x, y) {
+  for (let i = 0; i < 12; i++) {
+    const p     = document.createElement('div');
+    p.className = 'spray-particle';
+    p.textContent = '💦';
+    p.style.left = x + 'px';
+    p.style.top  = y + 'px';
+    const angle = (i / 12) * Math.PI * 2;
+    const dist  = 55 + Math.random() * 90;
+    p.style.setProperty('--tx', Math.cos(angle) * dist + 'px');
+    p.style.setProperty('--ty', Math.sin(angle) * dist + 'px');
+    game.appendChild(p);
+    setTimeout(() => p.remove(), 700);
+  }
+}
+
+function immobilize(dog, trap, countUse = true) {
+  if (dog.state === 'trapped') return;
+  dog.state        = 'trapped';
+  dog.holdStart    = Date.now();
+  dog.holdDuration = trap.holdDuration;
+  dog.el.classList.add('trapped');
+  dog.ring.style.setProperty('--pct', 100);
+  if (isMultiplayer) relay({ ev: 'immobilize', did: dog.id, hold: dog.holdDuration });
+
+  if (countUse) {
+    trap.uses--;
+    if (trap.uses <= 0) {
+      trap.el.style.opacity = '0.25';
+      if (trap.colEl) trap.colEl.style.opacity = '0';
+      setTimeout(() => {
+        trap.el.remove();
+        if (trap.colEl) trap.colEl.remove();
+        placedTraps = placedTraps.filter(t => t !== trap);
+      }, 500);
+    }
+  }
+
+  dog.timerId = setTimeout(() => {
+    if (dog.state === 'trapped' && gameRunning) {
+      dog.state = 'walking';
+      dog.el.classList.remove('trapped');
+      dog.ring.style.setProperty('--pct', 0);
+    }
+  }, dog.holdDuration * 1000);
+}
+
+// ── Capture / Escape ───────────────────────────────────────────────
+function onDogClicked(dog) {
+  if (!gameRunning) return;
+  if (dog.timerId) clearTimeout(dog.timerId);
+  dog.el.classList.remove('trapped');
+  dog.el.classList.add('capturing');
+  setTimeout(() => dog.el.remove(), 300);
+  dogs = dogs.filter(d => d !== dog);
+  score++;
+  const earned = dog.worth ?? EARN;
+  money += earned;
+  totalEarned += earned;
+  if (isMultiplayer) {
+    relay({ ev: 'catch', id: dog.id });
+    relay({ ev: 'score', score });
+  }
+  updateHUD();
+}
+
+function onDogEscaped(dog) {
+  if (dog.timerId) clearTimeout(dog.timerId);
+  dog.el.remove();
+  dogs = dogs.filter(d => d !== dog);
+  if (isMultiplayer && myRole === 'p2') return; // P1 is authoritative for escape counting
+  escaped++;
+  if (isMultiplayer) relay({ ev: 'escape', id: dog.id });
+  updateHUD();
+  if (escaped >= escapeLimit()) endGame();
+}
+
+// ── Trap placement ─────────────────────────────────────────────────
+function selectTrap(key) {
+  const def = TRAPS[key];
+  if (money < def.cost) {
+    const btn = $('btn-' + key);
+    btn.classList.remove('shaking');
+    void btn.offsetWidth;
+    btn.classList.add('shaking');
+    return;
+  }
+  if (placingTrap && placingTrap.key === key) { cancelPlacement(); return; }
+  cancelPlacement();
+  placingTrap = { key, ...def };
+  ghostEl.textContent = def.emoji;
+  game.style.cursor = 'crosshair';
+  updateHUD();
+}
+
+function cancelPlacement() {
+  placingTrap = null;
+  ghostEl.style.display = 'none';
+  game.style.cursor = '';
+  updateHUD();
+}
+
+function placeTrap(x, y) {
+  const def = placingTrap;
+  money -= def.cost;
+  updateHUD();
+
+  const el = document.createElement('div');
+  el.textContent = def.emoji;
+  el.style.left = x + 'px';
+  el.style.top  = y + 'px';
+
+  let trap;
+  if (def.type === 'bunny') {
+    el.className = 'trap-placed trap-bunny';
+    const colEl = document.createElement('div');
+    colEl.className = 'bunny-col';
+    colEl.style.left   = x + 'px';
+    colEl.style.top    = HUD_H + 'px';
+    colEl.style.height = (window.innerHeight - HUD_H - SHOP_H) + 'px';
+    game.appendChild(colEl);
+    trap = { el, colEl, type: 'bunny', uses: def.uses, holdDuration: def.hold, x, y, range: def.range, speed: def.speed };
+  } else if (def.type === 'hydrant') {
+    el.className = 'trap-placed trap-hydrant';
+    trap = { el, type: 'hydrant', uses: def.uses, holdDuration: def.hold, radius: def.radius, sprayDuration: def.sprayDuration, active: false, activeUntil: 0, aoeEl: null, x, y };
+  } else {
+    el.className = 'trap-placed';
+    trap = { el, uses: def.uses, holdDuration: def.hold, x, y };
+  }
+
+  placedTraps.push(trap);
+  game.appendChild(el);
+  cancelPlacement();
+}
+
+// ── Assistant selection & placement ───────────────────────────────
+function selectAssistant(key) {
+  const def = ASSISTANTS[key];
+  if (money < def.cost) {
+    const btn = $('btn-' + key);
+    btn.classList.remove('shaking'); void btn.offsetWidth;
+    btn.classList.add('shaking');
+    return;
+  }
+  if (placingTrap && placingTrap.key === key && placingTrap.category === 'assistant') { cancelPlacement(); return; }
+  cancelPlacement();
+  placingTrap = { key, category: 'assistant', ...def };
+  ghostEl.textContent = def.emoji;
+  game.style.cursor = 'crosshair';
+  updateHUD();
+}
+
+function placeAssistant(x, y) {
+  const def = placingTrap;
+  money -= def.cost;
+
+  const el = document.createElement('div');
+  el.className = 'assistant-placed';
+  el.textContent = def.emoji;
+  el.style.left = x + 'px';
+  el.style.top  = y + 'px';
+
+  const asst = { el, type: def.type, x, y };
+  if (def.type === 'flower') {
+    asst.radius = def.radius;
+    applyFlowerBuff(asst);
+  }
+
+  placedAssistants.push(asst);
+  game.appendChild(el);
+  cancelPlacement();
+  updateHUD();
+}
+
+function applyFlowerBuff(flower) {
+  for (const trap of placedTraps) {
+    const dx = trap.x - flower.x;
+    const dy = trap.y - flower.y;
+    if (Math.sqrt(dx * dx + dy * dy) < flower.radius) {
+      trap.uses++;
+      trap.holdDuration++;
+      trap.el.classList.remove('trap-buffed');
+      void trap.el.offsetWidth;
+      trap.el.classList.add('trap-buffed');
+    }
+  }
+}
+
+function destroyAssistant(asst) {
+  asst.el.classList.add('destroying');
+  setTimeout(() => asst.el.remove(), 380);
+  placedAssistants = placedAssistants.filter(a => a !== asst);
+  updateHUD();
+}
+
+// ── Event wiring ───────────────────────────────────────────────────
+document.addEventListener('mousemove', e => {
+  if (!placingTrap) return;
+  ghostEl.style.display = 'block';
+  ghostEl.style.left = e.clientX + 'px';
+  ghostEl.style.top  = e.clientY + 'px';
+});
+
+game.addEventListener('click', e => {
+  if (!placingTrap) return;
+  if ($('shop').contains(e.target) || $('hud').contains(e.target)) return;
+  if (placingTrap.category === 'assistant') placeAssistant(e.clientX, e.clientY);
+  else placeTrap(e.clientX, e.clientY);
+});
+
+document.addEventListener('keydown', e => { if (e.key === 'Escape') cancelPlacement(); });
+
+// ── Difficulty ─────────────────────────────────────────────────────
+function difficultyTick() {
+  spawnDelay = Math.max(650, spawnDelay - 180);
+  speedMin   = Math.min(speedMin + 12, 190);
+  speedMax   = Math.min(speedMax + 18, 260);
+  clearInterval(spawnTimer);
+  spawnTimer = setInterval(spawnDog, spawnDelay);
+  if (isMultiplayer && myRole === 'p1')
+    relay({ ev: 'difficulty', delay: spawnDelay, vmin: speedMin, vmax: speedMax });
+}
+
+// ── Lifecycle ──────────────────────────────────────────────────────
+function startGame() {
+  $('start-overlay').classList.add('hidden');
+  score = 0; money = 30; escaped = 0; totalEarned = 30;
+  dogs = []; placedTraps = []; placedAssistants = []; placingTrap = null;
+  dogIdCounter = 0; opponentScore = 0;
+  spawnDelay = 2200; speedMin = 80; speedMax = 145;
+  lastTs = null; gameRunning = true;
+
+  buildCity();
+  updateHUD();
+
+  if (!isMultiplayer || myRole === 'p1') {
+    spawnDog();
+    spawnTimer = setInterval(spawnDog, spawnDelay);
+    catTimer   = setInterval(spawnCat, CAT_INTERVAL);
+    diffTimer  = setInterval(difficultyTick, 10000);
+  }
+
+  rafId = requestAnimationFrame(gameLoop);
+}
+
+function endGame() {
+  if (!gameRunning) return;
+  gameRunning = false;
+  cancelPlacement();
+  clearInterval(spawnTimer);
+  clearInterval(catTimer);
+  clearInterval(diffTimer);
+  cancelAnimationFrame(rafId);
+  [...dogs].forEach(d => { if (d.timerId) clearTimeout(d.timerId); d.el.remove(); });
+  dogs = [];
+  placedTraps.forEach(t => { t.el.remove(); if (t.colEl) t.colEl.remove(); if (t.aoeEl) t.aoeEl.remove(); });
+  placedAssistants.forEach(a => a.el.remove());
+  placedAssistants = [];
+  placedTraps = [];
+  $('go-score').textContent = score;
+  $('go-money').textContent = totalEarned;
+
+  if (isMultiplayer) {
+    relay({ ev: 'game_over', score });
+    $('go-opp-row').classList.remove('hidden');
+    $('go-opp-score').textContent = opponentScore;
+    const youWin = score > opponentScore;
+    $('go-result').textContent = youWin ? '🏆 You Win!' : score === opponentScore ? '🤝 Tie Game!' : '😿 Opponent Wins!';
+    $('go-result').classList.remove('hidden');
+  } else {
+    $('go-opp-row').classList.add('hidden');
+    $('go-result').classList.add('hidden');
+  }
+
+  $('gameover-overlay').classList.remove('hidden');
+}
+
+function restartGame() {
+  $('gameover-overlay').classList.add('hidden');
+  if (isMultiplayer) {
+    isMultiplayer = false; myRole = null;
+    stopListeningEvents();
+    if (gameCode) { remove(ref(db, `dogs/${gameCode}`)); gameCode = null; }
+    resetLobbyUI();
+    $('start-overlay').classList.remove('hidden');
+  } else {
+    startGame();
+  }
+}
+
+// Expose functions referenced in HTML onclick attributes (module scope ≠ global)
+window.startGame    = startGame;
+window.showLobby    = showLobby;
+window.showModePanel = showModePanel;
+window.createRoom   = createRoom;
+window.joinRoom     = joinRoom;
+window.restartGame  = restartGame;
+
+// ── Multiplayer (Firebase) ──────────────────────────────────────────
+const FB_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const genCode  = () => Array.from({ length: 4 }, () => FB_CHARS[Math.floor(Math.random() * FB_CHARS.length)]).join('');
+
+function relay(payload) {
+  if (!gameCode || !isMultiplayer) return;
+  push(ref(db, `dogs/${gameCode}/events`), { ...payload, by: myRole });
+}
+
+function startListeningEvents() {
+  stopListeningEvents();
+  eventsListener = onChildAdded(ref(db, `dogs/${gameCode}/events`), snap => {
+    const msg = snap.val();
+    if (msg.by === myRole) return;
+    handleRelay(msg);
+  });
+}
+
+function stopListeningEvents() {
+  if (eventsListener) { eventsListener(); eventsListener = null; }
+  if (phaseListener)  { phaseListener();  phaseListener  = null; }
+}
+
+function handleRelay(msg) {
+  switch (msg.ev) {
+    case 'spawn':
+      makeDog(msg.id, msg.emoji, msg.x, msg.y, msg.speed, msg.dir, msg.worth ?? 0);
+      break;
+    case 'catch': {
+      const dog = dogs.find(d => d.id === msg.id);
+      if (!dog) break;
+      if (dog.timerId) clearTimeout(dog.timerId);
+      dog.el.classList.remove('trapped');
+      dog.el.classList.add('capturing');
+      setTimeout(() => dog.el.remove(), 300);
+      dogs = dogs.filter(d => d !== dog);
+      break;
+    }
+    case 'escape': {
+      const dog = dogs.find(d => d.id === msg.id);
+      if (dog) { if (dog.timerId) clearTimeout(dog.timerId); dog.el.remove(); dogs = dogs.filter(d => d !== dog); }
+      escaped++;
+      updateHUD();
+      if (escaped >= escapeLimit()) endGame();
+      break;
+    }
+    case 'immobilize': {
+      const dog = dogs.find(d => d.id === msg.did);
+      if (!dog || dog.state !== 'walking') break;
+      dog.state = 'trapped';
+      dog.holdStart = Date.now();
+      dog.holdDuration = msg.hold;
+      dog.el.classList.add('trapped');
+      dog.ring.style.setProperty('--pct', 100);
+      if (dog.timerId) clearTimeout(dog.timerId);
+      dog.timerId = setTimeout(() => {
+        if (dog.state === 'trapped' && gameRunning) {
+          dog.state = 'walking';
+          dog.el.classList.remove('trapped');
+          dog.ring.style.setProperty('--pct', 0);
+        }
+      }, msg.hold * 1000);
+      break;
+    }
+    case 'difficulty':
+      spawnDelay = msg.delay; speedMin = msg.vmin; speedMax = msg.vmax;
+      break;
+    case 'score':
+      opponentScore = msg.score;
+      updateHUD();
+      break;
+    case 'game_over':
+      opponentScore = msg.score;
+      endGame();
+      break;
+  }
+}
+
+// ── Lobby UI ────────────────────────────────────────────────────────
+function showLobby() {
+  $('mode-panel').classList.add('hidden');
+  $('lobby-panel').classList.remove('hidden');
+}
+
+function showModePanel() {
+  $('lobby-panel').classList.add('hidden');
+  $('mode-panel').classList.remove('hidden');
+  $('lobby-error').textContent = '';
+  $('code-display').classList.add('hidden');
+  $('create-btn').disabled = false;
+  stopListeningEvents();
+  if (gameCode) { remove(ref(db, `dogs/${gameCode}`)); gameCode = null; }
+}
+
+function resetLobbyUI() {
+  $('lobby-panel').classList.add('hidden');
+  $('mode-panel').classList.remove('hidden');
+  $('lobby-error').textContent = '';
+  $('code-display').classList.add('hidden');
+  $('create-btn').disabled = false;
+  $('join-input').value = '';
+}
+
+function showLobbyError(msg) {
+  $('lobby-error').textContent = msg;
+  if ($('lobby-panel').classList.contains('hidden')) showLobby();
+}
+
+async function createRoom() {
+  $('create-btn').disabled = true;
+  $('lobby-error').textContent = '';
+  const code = genCode();
+  gameCode = code; myRole = 'p1';
+  await set(ref(db, `dogs/${code}`), { phase: 'waiting' });
+  $('room-code').textContent = code;
+  $('code-display').classList.remove('hidden');
+
+  phaseListener = onValue(ref(db, `dogs/${code}/phase`), snap => {
+    if (snap.val() !== 'active') return;
+    if (phaseListener) { phaseListener(); phaseListener = null; }
+    isMultiplayer = true;
+    startListeningEvents();
+    $('start-overlay').classList.add('hidden');
+    startGame();
+  });
+}
+
+async function joinRoom() {
+  const code = $('join-input').value.trim().toUpperCase();
+  if (code.length !== 4) { showLobbyError('Enter a 4-character code'); return; }
+  showLobbyError('');
+  const snap = await get(ref(db, `dogs/${code}`));
+  if (!snap.exists())                   { showLobbyError('Room not found');            return; }
+  if (snap.val().phase !== 'waiting')   { showLobbyError('Room is full or in progress'); return; }
+  gameCode = code; myRole = 'p2';
+  await update(ref(db, `dogs/${code}`), { phase: 'active' });
+  isMultiplayer = true;
+  startListeningEvents();
+  $('start-overlay').classList.add('hidden');
+  startGame();
+}
+
+buildShop();
+</script>
+</body>
+</html>
