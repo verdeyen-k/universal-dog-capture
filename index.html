@@ -393,6 +393,13 @@ body {
 }
 .trap-buffed { animation: trap-buff-flash .9s ease-in-out; }
 
+/* Flash on a trap that just received a camera buff */
+@keyframes trap-camera-flash {
+  0%,100% { filter: drop-shadow(0 2px 5px rgba(0,0,0,.7)); }
+  45%     { filter: drop-shadow(0 0 14px rgba(80,180,255,.9)) drop-shadow(0 2px 5px rgba(0,0,0,.7)); }
+}
+.trap-camera-buffed { animation: trap-camera-flash .9s ease-in-out; }
+
 /* ── Multiplayer lobby ── */
 .mode-btns { display: flex; gap: 14px; }
 .secondary-btn {
@@ -837,7 +844,7 @@ function immobilize(dog, trap, countUse = true) {
   dog.holdDuration = trap.holdDuration;
   dog.el.classList.add('trapped');
   dog.ring.style.setProperty('--pct', 100);
-  if (isMultiplayer) relay({ ev: 'immobilize', did: dog.id, hold: dog.holdDuration });
+  if (isMultiplayer) relay({ ev: 'immobilize', did: dog.id, hold: dog.holdDuration, reverse: !!trap.reverses });
 
   if (countUse) {
     trap.uses--;
@@ -857,8 +864,16 @@ function immobilize(dog, trap, countUse = true) {
       dog.state = 'walking';
       dog.el.classList.remove('trapped');
       dog.ring.style.setProperty('--pct', 0);
+      if (trap.reverses) reverseDog(dog);
     }
   }, dog.holdDuration * 1000);
+}
+
+function reverseDog(dog) {
+  dog.dir *= -1;
+  dog.el.style.setProperty('--flip', dog.dir);
+  dog.x += dog.dir * 30;
+  dog.el.style.left = dog.x + 'px';
 }
 
 // ── Capture / Escape ───────────────────────────────────────────────
@@ -980,6 +995,9 @@ function placeAssistant(x, y) {
   if (def.type === 'flower') {
     asst.radius = def.radius;
     applyFlowerBuff(asst);
+  } else if (def.type === 'camera') {
+    asst.radius = def.radius;
+    applyCameraBuff(asst);
   }
 
   placedAssistants.push(asst);
@@ -998,6 +1016,19 @@ function applyFlowerBuff(flower) {
       trap.el.classList.remove('trap-buffed');
       void trap.el.offsetWidth;
       trap.el.classList.add('trap-buffed');
+    }
+  }
+}
+
+function applyCameraBuff(camera) {
+  for (const trap of placedTraps) {
+    const dx = trap.x - camera.x;
+    const dy = trap.y - camera.y;
+    if (Math.sqrt(dx * dx + dy * dy) < camera.radius) {
+      trap.reverses = true;
+      trap.el.classList.remove('trap-camera-buffed');
+      void trap.el.offsetWidth;
+      trap.el.classList.add('trap-camera-buffed');
     }
   }
 }
@@ -1165,6 +1196,7 @@ function handleRelay(msg) {
           dog.state = 'walking';
           dog.el.classList.remove('trapped');
           dog.ring.style.setProperty('--pct', 0);
+          if (msg.reverse) reverseDog(dog);
         }
       }, msg.hold * 1000);
       break;
@@ -1217,35 +1249,46 @@ async function createRoom() {
   $('create-btn').disabled = true;
   $('lobby-error').textContent = '';
   const code = genCode();
-  gameCode = code; myRole = 'p1';
-  await db.ref(`chick/dogs/${code}`).set({ phase: 'waiting' });
-  $('room-code').textContent = code;
-  $('code-display').classList.remove('hidden');
-
-  phaseRef = db.ref(`chick/dogs/${code}/phase`);
-  phaseRef.on('value', snap => {
-    if (snap.val() !== 'active') return;
-    phaseRef.off(); phaseRef = null;
-    isMultiplayer = true;
-    startListeningEvents();
-    $('start-overlay').classList.add('hidden');
-    startGame();
-  });
+  try {
+    gameCode = code; myRole = 'p1';
+    await db.ref(`chick/dogs/${code}`).set({ phase: 'waiting' });
+    $('room-code').textContent = code;
+    $('code-display').classList.remove('hidden');
+    phaseRef = db.ref(`chick/dogs/${code}/phase`);
+    phaseRef.on('value', snap => {
+      if (snap.val() !== 'active') return;
+      phaseRef.off(); phaseRef = null;
+      isMultiplayer = true;
+      startListeningEvents();
+      $('start-overlay').classList.add('hidden');
+      startGame();
+    });
+  } catch (err) {
+    console.error('createRoom failed:', err);
+    showLobbyError('Firebase error: ' + err.message);
+    $('create-btn').disabled = false;
+    gameCode = null; myRole = null;
+  }
 }
 
 async function joinRoom() {
   const code = $('join-input').value.trim().toUpperCase();
   if (code.length !== 4) { showLobbyError('Enter a 4-character code'); return; }
   showLobbyError('');
-  const snap = await db.ref(`chick/dogs/${code}`).once('value');
-  if (!snap.exists())                 { showLobbyError('Room not found');               return; }
-  if (snap.val().phase !== 'waiting') { showLobbyError('Room is full or in progress');  return; }
-  gameCode = code; myRole = 'p2';
-  await db.ref(`chick/dogs/${code}`).update({ phase: 'active' });
-  isMultiplayer = true;
-  startListeningEvents();
-  $('start-overlay').classList.add('hidden');
-  startGame();
+  try {
+    const snap = await db.ref(`chick/dogs/${code}`).once('value');
+    if (!snap.exists())                 { showLobbyError('Room not found');               return; }
+    if (snap.val().phase !== 'waiting') { showLobbyError('Room is full or in progress');  return; }
+    gameCode = code; myRole = 'p2';
+    await db.ref(`chick/dogs/${code}`).update({ phase: 'active' });
+    isMultiplayer = true;
+    startListeningEvents();
+    $('start-overlay').classList.add('hidden');
+    startGame();
+  } catch (err) {
+    console.error('joinRoom failed:', err);
+    showLobbyError('Firebase error: ' + err.message);
+  }
 }
 
 buildShop();

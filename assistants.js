@@ -14,4 +14,12 @@ const ASSISTANTS = {
     cost:   30,
     type:   'carpet',
   },
+  camera: {
+    label:  'Camera',
+    desc:   'Traps reverse dogs',
+    emoji:  '📷',
+    cost:   25,
+    type:   'camera',
+    radius: 130,  // buff radius (px) — traps within this make caught dogs turn around when released
+  },
 };
