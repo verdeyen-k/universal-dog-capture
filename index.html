@@ -74,6 +74,43 @@ body {
 .hud-stat strong { color: #fff; }
 #hud-escaped-wrap strong { color: #ff7043; }
 
+/* ── Abilities bar ── */
+#abilities-bar {
+  position: absolute;
+  top: 52px; left: 0; right: 0;
+  height: 52px;
+  background: rgba(0,0,0,.55);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  padding: 0 24px;
+  gap: 12px;
+  z-index: 99;
+  border-bottom: 1px solid rgba(255,255,255,.08);
+}
+
+.ability-btn { border-color: rgba(255,215,0,.22); }
+.ability-btn:hover { border-color: rgba(255,215,0,.45); }
+
+/* ── Ability activation flash ── */
+.ability-fx {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 120px;
+  z-index: 300;
+  pointer-events: none;
+  animation: ability-pop .6s ease-out forwards;
+}
+
+@keyframes ability-pop {
+  0%   { opacity: 0; transform: scale(.3); }
+  30%  { opacity: 1; transform: scale(1.3); }
+  100% { opacity: 0; transform: scale(2.2); }
+}
+
 /* ── Shop ── */
 #shop {
   position: absolute;
@@ -454,6 +491,8 @@ body {
     <span class="hud-stat" id="hud-opp" style="display:none">👤 Opp: <strong id="hud-opp-score">0</strong></span>
   </div>
 
+  <div id="abilities-bar"></div>
+
   <div id="street"></div>
 
   <div id="shop">
@@ -509,6 +548,7 @@ body {
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <script src="traps.js"></script>
 <script src="assistants.js"></script>
+<script src="abilities.js"></script>
 <script>
 firebase.initializeApp({
   apiKey:            'AIzaSyAsJboNGVuESMhkivllUD0o8MUB5LUCMRQ',
@@ -524,6 +564,7 @@ const db = firebase.database();
 const DOG_EMOJIS   = ['🐶', '🐩', '🦮', '🐕‍🦺'];
 const MAX_ESCAPED  = 5;
 const HUD_H        = 52;
+const ABIL_H       = 52;
 const SHOP_H       = 68;
 const EARN         = 10;
 const CAT_EARN     = 50;
@@ -545,7 +586,7 @@ const $ = id  => document.getElementById(id);
 
 // ── Layout helpers ─────────────────────────────────────────────────
 const buildingH = () => Math.floor((window.innerHeight - HUD_H - SHOP_H) * 0.30);
-const walkYMin  = () => HUD_H + 20;
+const walkYMin  = () => HUD_H + ABIL_H + 20;
 const walkYMax  = () => window.innerHeight - SHOP_H - buildingH() - 15;
 
 // ── City ───────────────────────────────────────────────────────────
@@ -616,6 +657,17 @@ function buildShop() {
     shop.appendChild(makeShopBtn(key, def, () => selectAssistant(key)));
 }
 
+function buildAbilitiesBar() {
+  const bar = $('abilities-bar');
+  bar.innerHTML = '<span class="shop-label">Abilities</span>';
+
+  for (const [key, def] of Object.entries(ABILITIES)) {
+    const btn = makeShopBtn(key, def, () => useAbility(key));
+    btn.classList.add('ability-btn');
+    bar.appendChild(btn);
+  }
+}
+
 // ── HUD ────────────────────────────────────────────────────────────
 function escapeLimit() {
   if (isMultiplayer) return MAX_ESCAPED;
@@ -645,6 +697,10 @@ function updateHUD() {
     const btn = $('btn-' + key);
     btn.classList.toggle('cant-afford', money < def.cost);
     btn.classList.toggle('selected',    !!placingTrap && placingTrap.key === key && placingTrap.category === 'assistant');
+  }
+  for (const [key, def] of Object.entries(ABILITIES)) {
+    const btn = $('btn-' + key);
+    btn.classList.toggle('cant-afford', money < def.cost);
   }
 }
 
@@ -1040,6 +1096,59 @@ function destroyAssistant(asst) {
   updateHUD();
 }
 
+// ── Abilities ──────────────────────────────────────────────────────
+function useAbility(key) {
+  const def = ABILITIES[key];
+  if (money < def.cost) {
+    const btn = $('btn-' + key);
+    btn.classList.remove('shaking');
+    void btn.offsetWidth;
+    btn.classList.add('shaking');
+    return;
+  }
+  money -= def.cost;
+  updateHUD();
+  flashAbility(def.emoji);
+
+  if (def.type === 'shockwave') {
+    triggerShockwave();
+  } else if (def.type === 'timemachine') {
+    const toCats = Math.random() < 0.25;
+    triggerTimeMachine(toCats);
+    if (isMultiplayer) relay({ ev: 'timemachine', toCats });
+  }
+}
+
+function flashAbility(emoji) {
+  const el = document.createElement('div');
+  el.className = 'ability-fx';
+  el.textContent = emoji;
+  game.appendChild(el);
+  setTimeout(() => el.remove(), 600);
+}
+
+function triggerShockwave() {
+  for (const dog of [...dogs]) onDogClicked(dog);
+}
+
+function triggerTimeMachine(toCats) {
+  const W = window.innerWidth;
+  for (const dog of dogs) {
+    if (dog.timerId) { clearTimeout(dog.timerId); dog.timerId = null; }
+    dog.state = 'walking';
+    dog.el.classList.remove('trapped');
+    dog.ring.style.setProperty('--pct', 0);
+    dog.x = dog.dir === 1 ? -62 : W + 22;
+    dog.el.style.left = dog.x + 'px';
+
+    if (toCats && !dog.el.classList.contains('cat')) {
+      dog.el.classList.add('cat');
+      dog.el.textContent = '🐱';
+      dog.worth = CAT_EARN;
+    }
+  }
+}
+
 // ── Event wiring ───────────────────────────────────────────────────
 document.addEventListener('mousemove', e => {
   if (!placingTrap) return;
@@ -1204,6 +1313,10 @@ function handleRelay(msg) {
     case 'difficulty':
       spawnDelay = msg.delay; speedMin = msg.vmin; speedMax = msg.vmax;
       break;
+    case 'timemachine':
+      triggerTimeMachine(msg.toCats);
+      flashAbility(ABILITIES.timemachine.emoji);
+      break;
     case 'score':
       opponentScore = msg.score;
       updateHUD();
@@ -1292,6 +1405,7 @@ async function joinRoom() {
 }
 
 buildShop();
+buildAbilitiesBar();
 </script>
 </body>
 </html>
