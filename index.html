@@ -346,6 +346,39 @@ body {
   display: none;
 }
 
+/* ── Opponent cursor ── */
+.opp-cursor {
+  position: fixed;
+  z-index: 250;
+  pointer-events: none;
+  display: none;
+  transition: left .08s linear, top .08s linear;
+}
+.cursor-dot {
+  width: 16px; height: 16px;
+  background: #4dc9ff;
+  border: 2px solid #fff;
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg) translate(-1px,-1px);
+  box-shadow: 0 0 10px rgba(77,201,255,.75);
+}
+.cursor-tag {
+  position: absolute;
+  left: 18px; top: -4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #fff;
+  background: rgba(0,0,0,.65);
+  padding: 2px 7px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+/* ── Opponent ghost traps/assistants ── */
+.ghost-trap, .ghost-assistant {
+  opacity: .32;
+}
+
 /* ── Overlays ── */
 .overlay {
   position: absolute;
@@ -500,6 +533,7 @@ body {
   </div>
 
   <div id="ghost"></div>
+  <div id="opp-cursor" class="opp-cursor"><div class="cursor-dot"></div><div class="cursor-tag">Opponent</div></div>
 
   <!-- Start screen -->
   <div id="start-overlay" class="overlay">
@@ -576,12 +610,15 @@ let dogs, placedTraps, placingTrap, placedAssistants;
 let gameRunning, lastTs, rafId, spawnTimer, diffTimer, catTimer;
 let spawnDelay, speedMin, speedMax;
 let isMultiplayer = false, myRole = null, gameCode = null;
-let opponentScore = 0, dogIdCounter = 0;
-let eventsRef = null, phaseRef = null;
+let opponentScore = 0, dogIdCounter = 0, trapIdCounter = 0, asstIdCounter = 0;
+let eventsRef = null, phaseRef = null, cursorRef = null;
+let oppGhostTraps = new Map(), oppGhostAssistants = new Map();
+let lastCursorSend = 0;
 
 // ── DOM refs ───────────────────────────────────────────────────────
-const game    = document.getElementById('game');
-const ghostEl = document.getElementById('ghost');
+const game       = document.getElementById('game');
+const ghostEl    = document.getElementById('ghost');
+const oppCursorEl = document.getElementById('opp-cursor');
 const $ = id  => document.getElementById(id);
 
 // ── Layout helpers ─────────────────────────────────────────────────
@@ -824,6 +861,7 @@ function gameLoop(ts) {
       }
       trap.el.style.opacity = '0.2';
       setTimeout(() => { trap.el.remove(); placedTraps = placedTraps.filter(t => t !== trap); }, 500);
+      if (isMultiplayer) relay({ ev: 'trap_remove', id: trap.id });
     } else {
       for (const dog of dogs) {
         if (dog.state === 'walking' && isInRadius(dog, trap)) immobilize(dog, trap, false);
@@ -912,6 +950,7 @@ function immobilize(dog, trap, countUse = true) {
         if (trap.colEl) trap.colEl.remove();
         placedTraps = placedTraps.filter(t => t !== trap);
       }, 500);
+      if (isMultiplayer) relay({ ev: 'trap_remove', id: trap.id });
     }
   }
 
@@ -1015,9 +1054,12 @@ function placeTrap(x, y) {
     trap = { el, uses: def.uses, holdDuration: def.hold, x, y };
   }
 
+  trap.id = ++trapIdCounter;
   placedTraps.push(trap);
   game.appendChild(el);
   cancelPlacement();
+
+  if (isMultiplayer) relay({ ev: 'trap_place', id: trap.id, key: def.key, kind: def.type, x, y });
 }
 
 // ── Assistant selection & placement ───────────────────────────────
@@ -1056,10 +1098,13 @@ function placeAssistant(x, y) {
     applyCameraBuff(asst);
   }
 
+  asst.id = ++asstIdCounter;
   placedAssistants.push(asst);
   game.appendChild(el);
   cancelPlacement();
   updateHUD();
+
+  if (isMultiplayer) relay({ ev: 'asst_place', id: asst.id, key: def.key, x, y });
 }
 
 function applyFlowerBuff(flower) {
@@ -1094,6 +1139,7 @@ function destroyAssistant(asst) {
   setTimeout(() => asst.el.remove(), 380);
   placedAssistants = placedAssistants.filter(a => a !== asst);
   updateHUD();
+  if (isMultiplayer) relay({ ev: 'asst_remove', id: asst.id });
 }
 
 // ── Abilities ──────────────────────────────────────────────────────
@@ -1157,6 +1203,17 @@ document.addEventListener('mousemove', e => {
   ghostEl.style.top  = e.clientY + 'px';
 });
 
+document.addEventListener('mousemove', e => {
+  if (!isMultiplayer || !gameRunning || !gameCode) return;
+  const now = performance.now();
+  if (now - lastCursorSend < 70) return;
+  lastCursorSend = now;
+  db.ref(`chick/dogs/${gameCode}/cursor/${myRole}`).set({
+    x: e.clientX / window.innerWidth,
+    y: e.clientY / window.innerHeight,
+  });
+});
+
 game.addEventListener('click', e => {
   if (!placingTrap) return;
   if ($('shop').contains(e.target) || $('hud').contains(e.target)) return;
@@ -1183,6 +1240,8 @@ function startGame() {
   score = 0; money = 30; escaped = 0; totalEarned = 30;
   dogs = []; placedTraps = []; placedAssistants = []; placingTrap = null;
   dogIdCounter = 0; opponentScore = 0;
+  trapIdCounter = 0; asstIdCounter = 0;
+  clearGhosts();
   spawnDelay = 2200; speedMin = 80; speedMax = 145;
   lastTs = null; gameRunning = true;
 
@@ -1213,6 +1272,7 @@ function endGame() {
   placedAssistants.forEach(a => a.el.remove());
   placedAssistants = [];
   placedTraps = [];
+  clearGhosts();
   $('go-score').textContent = score;
   $('go-money').textContent = totalEarned;
 
@@ -1253,6 +1313,13 @@ function relay(payload) {
   db.ref(`chick/dogs/${gameCode}/events`).push({ ...payload, by: myRole });
 }
 
+function clearGhosts() {
+  oppGhostTraps.forEach(el => el.remove());
+  oppGhostTraps.clear();
+  oppGhostAssistants.forEach(el => el.remove());
+  oppGhostAssistants.clear();
+}
+
 function startListeningEvents() {
   stopListeningEvents();
   eventsRef = db.ref(`chick/dogs/${gameCode}/events`);
@@ -1261,11 +1328,24 @@ function startListeningEvents() {
     if (msg.by === myRole) return;
     handleRelay(msg);
   });
+
+  const oppRole = myRole === 'p1' ? 'p2' : 'p1';
+  cursorRef = db.ref(`chick/dogs/${gameCode}/cursor/${oppRole}`);
+  cursorRef.on('value', snap => {
+    const pos = snap.val();
+    if (!pos) { oppCursorEl.style.display = 'none'; return; }
+    oppCursorEl.style.display = 'block';
+    oppCursorEl.style.left = (pos.x * window.innerWidth) + 'px';
+    oppCursorEl.style.top  = (pos.y * window.innerHeight) + 'px';
+  });
 }
 
 function stopListeningEvents() {
   if (eventsRef) { eventsRef.off(); eventsRef = null; }
   if (phaseRef)  { phaseRef.off();  phaseRef  = null; }
+  if (cursorRef) { cursorRef.off(); cursorRef = null; }
+  oppCursorEl.style.display = 'none';
+  clearGhosts();
 }
 
 function handleRelay(msg) {
@@ -1313,6 +1393,41 @@ function handleRelay(msg) {
     case 'difficulty':
       spawnDelay = msg.delay; speedMin = msg.vmin; speedMax = msg.vmax;
       break;
+    case 'trap_place': {
+      const def = TRAPS[msg.key];
+      if (!def) break;
+      const el = document.createElement('div');
+      el.className = 'trap-placed ghost-trap' +
+        (msg.kind === 'bunny' ? ' trap-bunny' : msg.kind === 'hydrant' ? ' trap-hydrant' : '');
+      el.textContent = def.emoji;
+      el.style.left = msg.x + 'px';
+      el.style.top  = msg.y + 'px';
+      game.appendChild(el);
+      oppGhostTraps.set(msg.id, el);
+      break;
+    }
+    case 'trap_remove': {
+      const el = oppGhostTraps.get(msg.id);
+      if (el) { el.style.opacity = '0'; setTimeout(() => el.remove(), 400); oppGhostTraps.delete(msg.id); }
+      break;
+    }
+    case 'asst_place': {
+      const def = ASSISTANTS[msg.key];
+      if (!def) break;
+      const el = document.createElement('div');
+      el.className = 'assistant-placed ghost-assistant';
+      el.textContent = def.emoji;
+      el.style.left = msg.x + 'px';
+      el.style.top  = msg.y + 'px';
+      game.appendChild(el);
+      oppGhostAssistants.set(msg.id, el);
+      break;
+    }
+    case 'asst_remove': {
+      const el = oppGhostAssistants.get(msg.id);
+      if (el) { el.classList.add('destroying'); setTimeout(() => el.remove(), 380); oppGhostAssistants.delete(msg.id); }
+      break;
+    }
     case 'timemachine':
       triggerTimeMachine(msg.toCats);
       flashAbility(ABILITIES.timemachine.emoji);
