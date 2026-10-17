@@ -628,7 +628,7 @@ body {
     <div id="tourney-lobby-panel">
       <h1>🏆 Tournament</h1>
       <div id="tourney-create-join">
-        <p>16 players, 16 colors, single-elimination bracket.</p>
+        <p>Up to 16 players, one color each, single-elimination bracket. Player count must be a power of two (2, 4, 8, or 16) to start.</p>
         <div class="mode-btns">
           <button class="big-btn" id="tourney-create-btn" onclick="createTournament()">Create Tournament</button>
         </div>
@@ -641,8 +641,9 @@ body {
       </div>
       <div id="tourney-roster-panel" class="hidden">
         <div class="code-value" id="tourney-code-display">····</div>
-        <div class="waiting-text" id="tourney-count-text">Players: 0/16</div>
+        <div class="waiting-text" id="tourney-count-text">Players: 0</div>
         <div id="tourney-color-grid" class="color-grid"></div>
+        <button class="big-btn hidden" id="tourney-start-btn" onclick="startTournamentNow()" style="margin-top:14px">Start Tournament</button>
       </div>
       <div class="back-link" onclick="leaveTournament()">← Leave Tournament</div>
     </div>
@@ -724,8 +725,15 @@ const TOURNEY_COLORS = [
   { key: 'rainbow',    label: 'Rainbow',     css: 'linear-gradient(90deg,#ff5050,#ffb347,#ffe14d,#8bd450,#5fc9f5,#9c4fd6)' },
   { key: 'tan',        label: 'Tan',         css: '#d2b48c' },
 ];
-const TOURNEY_ROUNDS = ['r1', 'r2', 'r3', 'r4'];
-const TOURNEY_ROUND_LABELS = { r1: 'Round of 16', r2: 'Quarterfinals', r3: 'Semifinals', r4: 'Final' };
+function isPowerOfTwo(n) { return n >= 2 && (n & (n - 1)) === 0; }
+
+// Label a round by how many players enter it (e.g. 16 -> "Round of 16", 2 -> "Final").
+function tourneyRoundLabel(playersInRound) {
+  if (playersInRound === 2) return 'Final';
+  if (playersInRound === 4) return 'Semifinals';
+  if (playersInRound === 8) return 'Quarterfinals';
+  return `Round of ${playersInRound}`;
+}
 
 let myPlayerId = null, tourneyCode = null, tourneyMyColor = null;
 let tourneyEliminated = false, tourneyInMatch = false;
@@ -1821,9 +1829,22 @@ function listenTourneyPlayers() {
     const players = snap.val() || {};
     tourneyPlayersCache = players;
     renderColorGrid(players);
-    const count = Object.keys(players).length;
-    $('tourney-count-text').textContent = `Players: ${count}/16`;
-    maybeStartBracket(players, count);
+
+    const colored = Object.values(players).filter(p => p.color).length;
+    const total = Object.keys(players).length;
+    const ready = isPowerOfTwo(colored);
+    $('tourney-count-text').textContent = total === colored
+      ? `Players: ${colored}${ready ? ' — ready to start!' : ' (need 2, 4, 8, or 16)'}`
+      : `Players: ${colored} with a color (${total} joined)${ready ? ' — ready to start!' : ''}`;
+
+    const startBtn = $('tourney-start-btn');
+    if (amTourneyHost()) {
+      startBtn.classList.remove('hidden');
+      startBtn.disabled = !ready;
+      startBtn.textContent = ready ? `Start Tournament (${colored})` : 'Start Tournament';
+    } else {
+      startBtn.classList.add('hidden');
+    }
   });
 }
 
@@ -1839,21 +1860,26 @@ function renderColorGrid(players) {
   }
 }
 
-async function maybeStartBracket(players, count) {
+async function startTournamentNow() {
   if (!amTourneyHost()) return;
-  if (count < 16) return;
-  if (!Object.values(players).every(p => p.color)) return;
+  const colored = Object.entries(tourneyPlayersCache).filter(([, p]) => p.color).map(([pid]) => pid);
+  if (!isPowerOfTwo(colored.length)) return;
 
   const bracketRootRef = db.ref(`chick/tourneys/${tourneyCode}/bracket`);
   const snap = await bracketRootRef.once('value');
   if (snap.exists()) return;
 
-  const ids = shuffleArray(Object.keys(players));
+  const ids = shuffleArray(colored);
   const round1 = {};
-  for (let i = 0; i < 8; i++)
+  for (let i = 0; i < ids.length / 2; i++)
     round1['m' + i] = { p1: ids[i * 2], p2: ids[i * 2 + 1], winner: null, status: 'pending' };
 
-  await bracketRootRef.transaction(cur => cur ? undefined : { round: 1, rounds: { r1: round1 }, champion: null });
+  await bracketRootRef.transaction(cur => cur ? undefined : {
+    round: 1,
+    totalRounds: Math.log2(ids.length),
+    rounds: { r1: round1 },
+    champion: null,
+  });
 }
 
 function listenTourneyBracket() {
@@ -1888,13 +1914,16 @@ function renderBracket(bracket) {
   const colsWrap = document.createElement('div');
   colsWrap.className = 'bracket-cols';
 
-  for (const rkey of TOURNEY_ROUNDS) {
+  const totalRounds = bracket.totalRounds || Object.keys(bracket.rounds || {}).length;
+  for (let r = 1; r <= totalRounds; r++) {
+    const rkey = 'r' + r;
+    const playersInRound = Math.pow(2, totalRounds - r + 1);
     const roundData = bracket.rounds && bracket.rounds[rkey];
     const col = document.createElement('div');
     col.className = 'bracket-col';
     const title = document.createElement('div');
     title.className = 'bracket-col-title';
-    title.textContent = TOURNEY_ROUND_LABELS[rkey];
+    title.textContent = tourneyRoundLabel(playersInRound);
     col.appendChild(title);
     if (roundData) {
       for (const mk of Object.keys(roundData).sort())
