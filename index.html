@@ -628,7 +628,7 @@ body {
     <div id="tourney-lobby-panel">
       <h1>🏆 Tournament</h1>
       <div id="tourney-create-join">
-        <p>Up to 16 players, one color each, single-elimination bracket. Player count must be a power of two (2, 4, 8, or 16) to start.</p>
+        <p>Up to 16 players, one color each, single-elimination bracket. Player count must be a power of two (4, 8, or 16) to start.</p>
         <div class="mode-btns">
           <button class="big-btn" id="tourney-create-btn" onclick="createTournament()">Create Tournament</button>
         </div>
@@ -725,7 +725,7 @@ const TOURNEY_COLORS = [
   { key: 'rainbow',    label: 'Rainbow',     css: 'linear-gradient(90deg,#ff5050,#ffb347,#ffe14d,#8bd450,#5fc9f5,#9c4fd6)' },
   { key: 'tan',        label: 'Tan',         css: '#d2b48c' },
 ];
-function isPowerOfTwo(n) { return n >= 2 && (n & (n - 1)) === 0; }
+function isPowerOfTwo(n) { return n >= 4 && (n & (n - 1)) === 0; }
 
 // Label a round by how many players enter it (e.g. 16 -> "Round of 16", 2 -> "Final").
 function tourneyRoundLabel(playersInRound) {
@@ -1834,7 +1834,7 @@ function listenTourneyPlayers() {
     const total = Object.keys(players).length;
     const ready = isPowerOfTwo(colored);
     $('tourney-count-text').textContent = total === colored
-      ? `Players: ${colored}${ready ? ' — ready to start!' : ' (need 2, 4, 8, or 16)'}`
+      ? `Players: ${colored}${ready ? ' — ready to start!' : ' (need 4, 8, or 16)'}`
       : `Players: ${colored} with a color (${total} joined)${ready ? ' — ready to start!' : ''}`;
 
     const startBtn = $('tourney-start-btn');
