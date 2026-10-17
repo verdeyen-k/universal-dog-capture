@@ -519,9 +519,9 @@ body {
   <div id="hud">
     <span class="hud-title">🐾 Universal Dog Capture</span>
     <span class="hud-stat">Score: <strong id="hud-score">0</strong></span>
-    <span class="hud-stat">💰 $<strong id="hud-money">30</strong></span>
+    <span class="hud-stat"><span id="hud-money-label">💰</span> $<strong id="hud-money">30</strong></span>
     <span class="hud-stat" id="hud-escaped-wrap">Escaped: <strong id="hud-escaped">0</strong>/<span id="hud-limit">5</span></span>
-    <span class="hud-stat" id="hud-opp" style="display:none">👤 Opp: <strong id="hud-opp-score">0</strong></span>
+    <span class="hud-stat" id="hud-opp" style="display:none"><span id="hud-opp-label">👤 Opp</span>: <strong id="hud-opp-score">0</strong></span>
   </div>
 
   <div id="abilities-bar"></div>
@@ -543,11 +543,13 @@ body {
       <p>Dogs are running wild through the city! Click them to capture before they escape. Buy traps to slow them down — but you still need to click the dog to catch it!</p>
       <div class="mode-btns">
         <button class="big-btn" onclick="startGame()">Solo</button>
-        <button class="big-btn secondary-btn" onclick="showLobby()">👥 2 Players</button>
+        <button class="big-btn secondary-btn" onclick="showLobby('versus')">⚔️ Versus</button>
+        <button class="big-btn secondary-btn" onclick="showLobby('coop')">🤝 Co-op</button>
       </div>
     </div>
 
     <div id="lobby-panel" class="hidden">
+      <div class="lobby-card-title" id="lobby-mode-label" style="text-align:center;margin-bottom:10px;font-size:15px;color:rgba(255,255,255,.7)">⚔️ Versus Mode</div>
       <div class="lobby-card">
         <div class="lobby-card-title">Create a game</div>
         <button class="sm-btn" id="create-btn" onclick="createRoom()">Generate Code</button>
@@ -610,8 +612,9 @@ let dogs, placedTraps, placingTrap, placedAssistants;
 let gameRunning, lastTs, rafId, spawnTimer, diffTimer, catTimer;
 let spawnDelay, speedMin, speedMax;
 let isMultiplayer = false, myRole = null, gameCode = null;
+let gameMode = 'solo', pendingMode = 'versus';
 let opponentScore = 0, dogIdCounter = 0, trapIdCounter = 0, asstIdCounter = 0;
-let eventsRef = null, phaseRef = null, cursorRef = null;
+let eventsRef = null, phaseRef = null, cursorRef = null, moneyRef = null;
 let oppGhostTraps = new Map(), oppGhostAssistants = new Map();
 let lastCursorSend = 0;
 
@@ -655,6 +658,26 @@ function buildCity() {
     }
     game.appendChild(b);
     x += w + Math.floor(Math.random() * 10) - 2;
+  }
+}
+
+// ── Shared economy (co-op draws from one pooled balance) ──────────
+function spendMoney(cost) {
+  money -= cost;
+  updateHUD();
+  if (gameMode === 'coop' && isMultiplayer && moneyRef) {
+    moneyRef.transaction(cur => {
+      cur = cur ?? 0;
+      return cur < cost ? undefined : cur - cost; // abort if partner already spent it
+    });
+  }
+}
+
+function earnMoney(amount) {
+  money += amount;
+  updateHUD();
+  if (gameMode === 'coop' && isMultiplayer && moneyRef) {
+    moneyRef.transaction(cur => (cur ?? 0) + amount);
   }
 }
 
@@ -717,9 +740,12 @@ function updateHUD() {
   $('hud-escaped').textContent = escaped;
   $('hud-limit').textContent   = escapeLimit();
 
+  $('hud-money-label').textContent = (isMultiplayer && gameMode === 'coop') ? '💰 Team' : '💰';
+
   const oppEl = $('hud-opp');
   if (isMultiplayer) {
     oppEl.style.display = '';
+    $('hud-opp-label').textContent = gameMode === 'coop' ? '🤝 Partner' : '👤 Opp';
     $('hud-opp-score').textContent = opponentScore;
   } else {
     oppEl.style.display = 'none';
@@ -981,8 +1007,8 @@ function onDogClicked(dog) {
   dogs = dogs.filter(d => d !== dog);
   score++;
   const earned = dog.worth ?? EARN;
-  money += earned;
   totalEarned += earned;
+  earnMoney(earned);
   if (isMultiplayer) {
     relay({ ev: 'catch', id: dog.id });
     relay({ ev: 'score', score });
@@ -1028,8 +1054,7 @@ function cancelPlacement() {
 
 function placeTrap(x, y) {
   const def = placingTrap;
-  money -= def.cost;
-  updateHUD();
+  spendMoney(def.cost);
 
   const el = document.createElement('div');
   el.textContent = def.emoji;
@@ -1081,7 +1106,7 @@ function selectAssistant(key) {
 
 function placeAssistant(x, y) {
   const def = placingTrap;
-  money -= def.cost;
+  spendMoney(def.cost);
 
   const el = document.createElement('div');
   el.className = 'assistant-placed';
@@ -1152,8 +1177,7 @@ function useAbility(key) {
     btn.classList.add('shaking');
     return;
   }
-  money -= def.cost;
-  updateHUD();
+  spendMoney(def.cost);
   flashAbility(def.emoji);
 
   if (def.type === 'shockwave') {
@@ -1278,11 +1302,17 @@ function endGame() {
 
   if (isMultiplayer) {
     relay({ ev: 'game_over', score });
-    $('go-opp-row').classList.remove('hidden');
-    $('go-opp-score').textContent = opponentScore;
-    const youWin = score > opponentScore;
-    $('go-result').textContent = youWin ? '🏆 You Win!' : score === opponentScore ? '🤝 Tie Game!' : '😿 Opponent Wins!';
-    $('go-result').classList.remove('hidden');
+    if (gameMode === 'coop') {
+      $('go-opp-row').classList.add('hidden');
+      $('go-result').textContent = `🤝 Team Score: ${score + opponentScore}`;
+      $('go-result').classList.remove('hidden');
+    } else {
+      $('go-opp-row').classList.remove('hidden');
+      $('go-opp-score').textContent = opponentScore;
+      const youWin = score > opponentScore;
+      $('go-result').textContent = youWin ? '🏆 You Win!' : score === opponentScore ? '🤝 Tie Game!' : '😿 Opponent Wins!';
+      $('go-result').classList.remove('hidden');
+    }
   } else {
     $('go-opp-row').classList.add('hidden');
     $('go-result').classList.add('hidden');
@@ -1294,7 +1324,7 @@ function endGame() {
 function restartGame() {
   $('gameover-overlay').classList.add('hidden');
   if (isMultiplayer) {
-    isMultiplayer = false; myRole = null;
+    isMultiplayer = false; myRole = null; gameMode = 'solo';
     stopListeningEvents();
     if (gameCode) { db.ref(`chick/dogs/${gameCode}`).remove(); gameCode = null; }
     resetLobbyUI();
@@ -1338,12 +1368,21 @@ function startListeningEvents() {
     oppCursorEl.style.left = (pos.x * window.innerWidth) + 'px';
     oppCursorEl.style.top  = (pos.y * window.innerHeight) + 'px';
   });
+
+  if (gameMode === 'coop') {
+    moneyRef = db.ref(`chick/dogs/${gameCode}/money`);
+    moneyRef.on('value', snap => {
+      const v = snap.val();
+      if (v != null) { money = v; updateHUD(); }
+    });
+  }
 }
 
 function stopListeningEvents() {
   if (eventsRef) { eventsRef.off(); eventsRef = null; }
   if (phaseRef)  { phaseRef.off();  phaseRef  = null; }
   if (cursorRef) { cursorRef.off(); cursorRef = null; }
+  if (moneyRef)  { moneyRef.off();  moneyRef  = null; }
   oppCursorEl.style.display = 'none';
   clearGhosts();
 }
@@ -1444,7 +1483,9 @@ function handleRelay(msg) {
 }
 
 // ── Lobby UI ────────────────────────────────────────────────────────
-function showLobby() {
+function showLobby(mode) {
+  pendingMode = mode;
+  $('lobby-mode-label').textContent = mode === 'coop' ? '🤝 Co-op Mode — shared money, work together' : '⚔️ Versus Mode — race for the highest score';
   $('mode-panel').classList.add('hidden');
   $('lobby-panel').classList.remove('hidden');
 }
@@ -1478,8 +1519,10 @@ async function createRoom() {
   $('lobby-error').textContent = '';
   const code = genCode();
   try {
-    gameCode = code; myRole = 'p1';
-    await db.ref(`chick/dogs/${code}`).set({ phase: 'waiting' });
+    gameCode = code; myRole = 'p1'; gameMode = pendingMode;
+    const roomData = { phase: 'waiting', mode: gameMode };
+    if (gameMode === 'coop') roomData.money = 30;
+    await db.ref(`chick/dogs/${code}`).set(roomData);
     $('room-code').textContent = code;
     $('code-display').classList.remove('hidden');
     phaseRef = db.ref(`chick/dogs/${code}/phase`);
@@ -1506,8 +1549,9 @@ async function joinRoom() {
   try {
     const snap = await db.ref(`chick/dogs/${code}`).once('value');
     if (!snap.exists())                 { showLobbyError('Room not found');               return; }
-    if (snap.val().phase !== 'waiting') { showLobbyError('Room is full or in progress');  return; }
-    gameCode = code; myRole = 'p2';
+    const roomVal = snap.val();
+    if (roomVal.phase !== 'waiting')    { showLobbyError('Room is full or in progress');  return; }
+    gameCode = code; myRole = 'p2'; gameMode = roomVal.mode || 'versus';
     await db.ref(`chick/dogs/${code}`).update({ phase: 'active' });
     isMultiplayer = true;
     startListeningEvents();
