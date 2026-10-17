@@ -512,6 +512,59 @@ body {
 .lobby-error { color: #ff6b6b; font-size: 13px; margin-top: 6px; text-align: center; min-height: 18px; }
 .go-opp-row { font-size: 18px; margin-bottom: 8px; }
 .go-result  { font-size: 24px; font-weight: 700; margin-bottom: 20px; color: #ffd700; }
+
+/* ── Tournament ── */
+#tourney-overlay .code-value { margin-bottom: 14px; }
+.color-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 64px);
+  gap: 10px;
+  justify-content: center;
+  margin: 16px 0;
+}
+.color-swatch {
+  width: 64px; height: 64px;
+  border-radius: 12px;
+  border: 2px solid rgba(255,255,255,.25);
+  cursor: pointer;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 4px;
+  font-size: 9.5px;
+  font-weight: 600;
+  color: #fff;
+  text-shadow: 0 1px 3px rgba(0,0,0,.9);
+  transition: transform .12s, border-color .12s;
+}
+.color-swatch:hover:not(.taken) { transform: translateY(-2px); border-color: rgba(255,255,255,.6); }
+.color-swatch.taken { cursor: not-allowed; opacity: .88; }
+.color-swatch.mine  { border-color: #ffd700; box-shadow: 0 0 12px rgba(255,215,0,.5); }
+.color-swatch.rainbow-swatch { background: linear-gradient(90deg,#ff5050,#ffb347,#ffe14d,#8bd450,#5fc9f5,#9c4fd6); }
+
+.tourney-status { font-size: 15px; color: rgba(255,255,255,.8); margin-bottom: 14px; min-height: 20px; }
+
+.bracket-cols {
+  display: flex;
+  gap: 20px;
+  overflow-x: auto;
+  max-width: 92vw;
+  padding: 6px;
+}
+.bracket-col {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  justify-content: center;
+  min-width: 170px;
+}
+.bracket-col-title { font-size: 11px; color: rgba(255,255,255,.4); text-transform: uppercase; letter-spacing: 1.5px; text-align: center; margin-bottom: 2px; }
+.bracket-match { background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.14); border-radius: 9px; padding: 7px 10px; font-size: 12px; text-align: left; }
+.bracket-slot { display: flex; align-items: center; gap: 6px; padding: 3px 0; color: rgba(255,255,255,.85); }
+.bracket-slot.winner { font-weight: 700; color: #ffd700; }
+.bracket-slot.loser  { opacity: .4; text-decoration: line-through; }
+.bracket-dot { width: 13px; height: 13px; border-radius: 50%; border: 1.5px solid rgba(255,255,255,.4); flex-shrink: 0; }
+.bracket-dot.mine { box-shadow: 0 0 6px #ffd700; border-color: #ffd700; }
 </style>
 </head>
 <body>
@@ -545,6 +598,7 @@ body {
         <button class="big-btn" onclick="startGame()">Solo</button>
         <button class="big-btn secondary-btn" onclick="showLobby('versus')">⚔️ Versus</button>
         <button class="big-btn secondary-btn" onclick="showLobby('coop')">🤝 Co-op</button>
+        <button class="big-btn secondary-btn" onclick="showTourneyLobby()">🏆 Tournament</button>
       </div>
     </div>
 
@@ -569,6 +623,38 @@ body {
     </div>
   </div>
 
+  <!-- Tournament lobby / bracket -->
+  <div id="tourney-overlay" class="overlay hidden">
+    <div id="tourney-lobby-panel">
+      <h1>🏆 Tournament</h1>
+      <div id="tourney-create-join">
+        <p>16 players, 16 colors, single-elimination bracket.</p>
+        <div class="mode-btns">
+          <button class="big-btn" id="tourney-create-btn" onclick="createTournament()">Create Tournament</button>
+        </div>
+        <div class="or-row">— or —</div>
+        <div class="lobby-card" style="width:280px;margin:0 auto">
+          <input id="tourney-join-input" class="code-input" maxlength="4" placeholder="XXXX" oninput="this.value=this.value.toUpperCase()">
+          <button class="sm-btn" onclick="joinTournament()">Join</button>
+          <div id="tourney-lobby-error" class="lobby-error"></div>
+        </div>
+      </div>
+      <div id="tourney-roster-panel" class="hidden">
+        <div class="code-value" id="tourney-code-display">····</div>
+        <div class="waiting-text" id="tourney-count-text">Players: 0/16</div>
+        <div id="tourney-color-grid" class="color-grid"></div>
+      </div>
+      <div class="back-link" onclick="leaveTournament()">← Leave Tournament</div>
+    </div>
+
+    <div id="tourney-bracket-panel" class="hidden">
+      <h1>🏆 Tournament Bracket</h1>
+      <div class="tourney-status" id="tourney-status-banner"></div>
+      <div id="tourney-bracket-view"></div>
+      <div class="back-link" onclick="leaveTournament()">← Leave Tournament</div>
+    </div>
+  </div>
+
   <!-- Game over -->
   <div id="gameover-overlay" class="overlay hidden">
     <h1>🐕 Dogs Escaped!</h1>
@@ -576,7 +662,8 @@ body {
     <div class="stat green">Total earned: $<span id="go-money">0</span></div>
     <div class="go-opp-row hidden" id="go-opp-row">Opponent caught: <strong id="go-opp-score">0</strong></div>
     <div class="go-result hidden" id="go-result"></div>
-    <button class="big-btn" onclick="restartGame()">Play Again</button>
+    <button class="big-btn" id="go-playagain-btn" onclick="restartGame()">Play Again</button>
+    <button class="big-btn hidden" id="go-continue-btn" onclick="continueTourney()">Continue</button>
   </div>
 </div>
 
@@ -617,6 +704,34 @@ let opponentScore = 0, dogIdCounter = 0, trapIdCounter = 0, asstIdCounter = 0;
 let eventsRef = null, phaseRef = null, cursorRef = null, moneyRef = null;
 let oppGhostTraps = new Map(), oppGhostAssistants = new Map();
 let lastCursorSend = 0;
+
+// ── Tournament state ───────────────────────────────────────────────
+const TOURNEY_COLORS = [
+  { key: 'pink',       label: 'Pink',        css: '#ff8fc7' },
+  { key: 'red',        label: 'Red',         css: '#e53935' },
+  { key: 'maroon',     label: 'Maroon',      css: '#7a1f2b' },
+  { key: 'orange',     label: 'Orange',      css: '#ff8f1f' },
+  { key: 'yellow',     label: 'Yellow',      css: '#ffe14d' },
+  { key: 'lightgreen', label: 'Light Green', css: '#8bd450' },
+  { key: 'darkgreen',  label: 'Dark Green',  css: '#1f6b2e' },
+  { key: 'lightblue',  label: 'Light Blue',  css: '#5fc9f5' },
+  { key: 'darkblue',   label: 'Dark Blue',   css: '#1c4fa3' },
+  { key: 'black',      label: 'Black',       css: '#1a1a1a' },
+  { key: 'darkgray',   label: 'Dark Gray',   css: '#5a5a5a' },
+  { key: 'lightgray',  label: 'Light Gray',  css: '#c9c9c9' },
+  { key: 'white',      label: 'White',       css: '#ffffff' },
+  { key: 'purple',     label: 'Purple',      css: '#9c4fd6' },
+  { key: 'rainbow',    label: 'Rainbow',     css: 'linear-gradient(90deg,#ff5050,#ffb347,#ffe14d,#8bd450,#5fc9f5,#9c4fd6)' },
+  { key: 'tan',        label: 'Tan',         css: '#d2b48c' },
+];
+const TOURNEY_ROUNDS = ['r1', 'r2', 'r3', 'r4'];
+const TOURNEY_ROUND_LABELS = { r1: 'Round of 16', r2: 'Quarterfinals', r3: 'Semifinals', r4: 'Final' };
+
+let myPlayerId = null, tourneyCode = null, tourneyMyColor = null;
+let tourneyEliminated = false, tourneyInMatch = false;
+let tourneyPlayersRef = null, tourneyBracketRef = null, tourneyOppPresenceRef = null;
+let tourneyPlayersCache = {};
+let tourneyCurrentMatchPath = null, tourneyOpponentId = null, tourneyForfeitTimer = null;
 
 // ── DOM refs ───────────────────────────────────────────────────────
 const game       = document.getElementById('game');
@@ -1300,8 +1415,21 @@ function endGame() {
   $('go-score').textContent = score;
   $('go-money').textContent = totalEarned;
 
-  if (isMultiplayer) {
-    relay({ ev: 'game_over', score });
+  if (isMultiplayer) relay({ ev: 'game_over', score });
+
+  $('go-continue-btn').classList.add('hidden');
+  $('go-playagain-btn').classList.remove('hidden');
+
+  if (tourneyInMatch) {
+    const youWin = score !== opponentScore ? score > opponentScore : myRole === 'p1';
+    reportTourneyResult(youWin);
+    $('go-opp-row').classList.remove('hidden');
+    $('go-opp-score').textContent = opponentScore;
+    $('go-result').textContent = youWin ? '🏆 You Win! Advancing…' : '😿 Eliminated';
+    $('go-result').classList.remove('hidden');
+    $('go-continue-btn').classList.remove('hidden');
+    $('go-playagain-btn').classList.add('hidden');
+  } else if (isMultiplayer) {
     if (gameMode === 'coop') {
       $('go-opp-row').classList.add('hidden');
       $('go-result').textContent = `🤝 Team Score: ${score + opponentScore}`;
@@ -1561,6 +1689,404 @@ async function joinRoom() {
     console.error('joinRoom failed:', err);
     showLobbyError('Firebase error: ' + err.message);
   }
+}
+
+// ── Tournament ────────────────────────────────────────────────────
+function genTourneyPlayerId() {
+  return 'p_' + Math.random().toString(36).slice(2, 10);
+}
+
+function shuffleArray(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function showTourneyLobby() {
+  $('mode-panel').classList.add('hidden');
+  $('lobby-panel').classList.add('hidden');
+  $('tourney-overlay').classList.remove('hidden');
+  $('tourney-lobby-panel').classList.remove('hidden');
+  $('tourney-bracket-panel').classList.add('hidden');
+  $('tourney-create-join').classList.remove('hidden');
+  $('tourney-roster-panel').classList.add('hidden');
+  $('tourney-lobby-error').textContent = '';
+  $('tourney-create-btn').disabled = false;
+}
+
+async function createTournament() {
+  $('tourney-create-btn').disabled = true;
+  $('tourney-lobby-error').textContent = '';
+  const code = genCode();
+  const hostId = genTourneyPlayerId();
+  try {
+    await db.ref(`chick/tourneys/${code}`).set({ phase: 'lobby', createdAt: Date.now(), host: hostId });
+    await enterTournament(code, hostId);
+  } catch (err) {
+    console.error('createTournament failed:', err);
+    $('tourney-lobby-error').textContent = 'Firebase error: ' + err.message;
+    $('tourney-create-btn').disabled = false;
+  }
+}
+
+async function joinTournament() {
+  const code = $('tourney-join-input').value.trim().toUpperCase();
+  if (code.length !== 4) { $('tourney-lobby-error').textContent = 'Enter a 4-character code'; return; }
+  $('tourney-lobby-error').textContent = '';
+  try {
+    const snap = await db.ref(`chick/tourneys/${code}`).once('value');
+    if (!snap.exists()) { $('tourney-lobby-error').textContent = 'Tournament not found'; return; }
+    await enterTournament(code);
+  } catch (err) {
+    console.error('joinTournament failed:', err);
+    $('tourney-lobby-error').textContent = 'Firebase error: ' + err.message;
+  }
+}
+
+// Only the tournament creator ("host") is allowed to generate/advance bracket
+// rounds. Firebase applies a client's own transactions to its local listeners
+// optimistically, before the server confirms them — if every client tried to
+// race for bracket generation, a client could briefly act on its own
+// since-rejected shuffle and get stuck (tourneyInMatch blocks re-routing).
+// Electing a single writer removes that race entirely.
+let tourneyHostId = null;
+function amTourneyHost() { return !!myPlayerId && myPlayerId === tourneyHostId; }
+
+async function enterTournament(code, presetPlayerId) {
+  tourneyCode = code;
+  myPlayerId = presetPlayerId || genTourneyPlayerId();
+  tourneyMyColor = null; tourneyEliminated = false; tourneyInMatch = false;
+
+  $('tourney-create-join').classList.add('hidden');
+  $('tourney-roster-panel').classList.remove('hidden');
+  $('tourney-code-display').textContent = code;
+
+  const hostSnap = await db.ref(`chick/tourneys/${code}/host`).once('value');
+  tourneyHostId = hostSnap.val();
+
+  const myRef = db.ref(`chick/tourneys/${code}/players/${myPlayerId}`);
+  await myRef.set({ connected: true, joinedAt: Date.now() });
+  myRef.onDisconnect().update({ connected: false });
+
+  buildColorGrid();
+  listenTourneyPlayers();
+  listenTourneyBracket();
+}
+
+function buildColorGrid() {
+  const grid = $('tourney-color-grid');
+  grid.innerHTML = '';
+  for (const c of TOURNEY_COLORS) {
+    const sw = document.createElement('div');
+    sw.className = 'color-swatch' + (c.key === 'rainbow' ? ' rainbow-swatch' : '');
+    sw.id = 'swatch-' + c.key;
+    if (c.key !== 'rainbow') sw.style.background = c.css;
+    sw.textContent = c.label;
+    sw.onclick = () => claimColor(c.key);
+    grid.appendChild(sw);
+  }
+}
+
+function claimColor(colorKey, attempt = 0) {
+  if (tourneyMyColor) return;
+  const playersRef = db.ref(`chick/tourneys/${tourneyCode}/players`);
+  playersRef.transaction(players => {
+    if (!players) return;
+    for (const pid in players) {
+      if (pid !== myPlayerId && players[pid].color === colorKey) return; // taken
+    }
+    if (!players[myPlayerId] || players[myPlayerId].color) return; // missing or already chose
+    players[myPlayerId].color = colorKey;
+    return players;
+  }, (err, committed) => {
+    if (err) {
+      // Heavy write contention on the shared players node (many clients
+      // claiming at once) can exhaust the transaction's internal retries
+      // even though the color itself was never actually taken — retry.
+      if (attempt < 4) setTimeout(() => claimColor(colorKey, attempt + 1), 150 + Math.random() * 200);
+      else console.error('claimColor failed:', err);
+      return;
+    }
+    if (committed) tourneyMyColor = colorKey;
+  });
+}
+
+function listenTourneyPlayers() {
+  if (tourneyPlayersRef) tourneyPlayersRef.off();
+  tourneyPlayersRef = db.ref(`chick/tourneys/${tourneyCode}/players`);
+  tourneyPlayersRef.on('value', snap => {
+    const players = snap.val() || {};
+    tourneyPlayersCache = players;
+    renderColorGrid(players);
+    const count = Object.keys(players).length;
+    $('tourney-count-text').textContent = `Players: ${count}/16`;
+    maybeStartBracket(players, count);
+  });
+}
+
+function renderColorGrid(players) {
+  const takenBy = {};
+  for (const pid in players) if (players[pid].color) takenBy[players[pid].color] = pid;
+  for (const c of TOURNEY_COLORS) {
+    const sw = $('swatch-' + c.key);
+    if (!sw) continue;
+    const pid = takenBy[c.key];
+    sw.classList.toggle('taken', !!pid);
+    sw.classList.toggle('mine', pid === myPlayerId);
+  }
+}
+
+async function maybeStartBracket(players, count) {
+  if (!amTourneyHost()) return;
+  if (count < 16) return;
+  if (!Object.values(players).every(p => p.color)) return;
+
+  const bracketRootRef = db.ref(`chick/tourneys/${tourneyCode}/bracket`);
+  const snap = await bracketRootRef.once('value');
+  if (snap.exists()) return;
+
+  const ids = shuffleArray(Object.keys(players));
+  const round1 = {};
+  for (let i = 0; i < 8; i++)
+    round1['m' + i] = { p1: ids[i * 2], p2: ids[i * 2 + 1], winner: null, status: 'pending' };
+
+  await bracketRootRef.transaction(cur => cur ? undefined : { round: 1, rounds: { r1: round1 }, champion: null });
+}
+
+function listenTourneyBracket() {
+  if (tourneyBracketRef) tourneyBracketRef.off();
+  tourneyBracketRef = db.ref(`chick/tourneys/${tourneyCode}/bracket`);
+  tourneyBracketRef.on('value', snap => {
+    const bracket = snap.val();
+    if (!bracket) return;
+    $('tourney-lobby-panel').classList.add('hidden');
+    $('tourney-bracket-panel').classList.remove('hidden');
+    renderBracket(bracket);
+    routeToMyMatch(bracket);
+    maybeAdvanceRound(bracket);
+  });
+}
+
+function colorLabel(pid) {
+  const def = TOURNEY_COLORS.find(c => c.key === tourneyPlayersCache[pid]?.color);
+  return def ? def.label : '???';
+}
+
+function colorDotHTML(pid) {
+  const def = TOURNEY_COLORS.find(c => c.key === tourneyPlayersCache[pid]?.color);
+  const bg = def ? def.css : 'transparent';
+  const mine = pid === myPlayerId ? ' mine' : '';
+  return `<span class="bracket-dot${mine}" style="background:${bg}"></span>`;
+}
+
+function renderBracket(bracket) {
+  const container = $('tourney-bracket-view');
+  container.innerHTML = '';
+  const colsWrap = document.createElement('div');
+  colsWrap.className = 'bracket-cols';
+
+  for (const rkey of TOURNEY_ROUNDS) {
+    const roundData = bracket.rounds && bracket.rounds[rkey];
+    const col = document.createElement('div');
+    col.className = 'bracket-col';
+    const title = document.createElement('div');
+    title.className = 'bracket-col-title';
+    title.textContent = TOURNEY_ROUND_LABELS[rkey];
+    col.appendChild(title);
+    if (roundData) {
+      for (const mk of Object.keys(roundData).sort())
+        col.appendChild(renderMatchCard(roundData[mk]));
+    } else {
+      const ph = document.createElement('div');
+      ph.className = 'waiting-text';
+      ph.textContent = '—';
+      col.appendChild(ph);
+    }
+    colsWrap.appendChild(col);
+  }
+  container.appendChild(colsWrap);
+
+  const banner = $('tourney-status-banner');
+  if (bracket.champion) {
+    banner.textContent = bracket.champion === myPlayerId
+      ? '🏆 You won the tournament!'
+      : `🏆 Tournament Champion: ${colorLabel(bracket.champion)}`;
+  } else if (tourneyEliminated) {
+    banner.textContent = 'You were eliminated — spectating the rest of the bracket.';
+  } else {
+    banner.textContent = 'Waiting for your next match…';
+  }
+}
+
+function renderMatchCard(match) {
+  const card = document.createElement('div');
+  card.className = 'bracket-match';
+  card.appendChild(renderBracketSlot(match.p1, match.winner));
+  card.appendChild(renderBracketSlot(match.p2, match.winner));
+  return card;
+}
+
+function renderBracketSlot(pid, winner) {
+  const row = document.createElement('div');
+  if (!pid) { row.className = 'bracket-slot'; row.textContent = 'BYE'; return row; }
+  row.className = 'bracket-slot' + (winner ? (winner === pid ? ' winner' : ' loser') : '');
+  row.innerHTML = colorDotHTML(pid) + ' ' + colorLabel(pid) + (pid === myPlayerId ? ' (you)' : '');
+  return row;
+}
+
+function routeToMyMatch(bracket) {
+  if (tourneyInMatch || tourneyEliminated || bracket.champion) return;
+  const rkey = 'r' + bracket.round;
+  const roundData = bracket.rounds && bracket.rounds[rkey];
+  if (!roundData) return;
+  for (const mk of Object.keys(roundData)) {
+    const match = roundData[mk];
+    if (match.winner) continue;
+    if (match.p1 === myPlayerId || match.p2 === myPlayerId) {
+      beginTourneyMatch(rkey, mk, match);
+      return;
+    }
+  }
+}
+
+async function beginTourneyMatch(rkey, mk, match) {
+  tourneyInMatch = true;
+  tourneyCurrentMatchPath = `chick/tourneys/${tourneyCode}/bracket/rounds/${rkey}/${mk}`;
+  const amP1 = match.p1 === myPlayerId;
+  tourneyOpponentId = amP1 ? match.p2 : match.p1;
+  const matchRoomCode = `t_${tourneyCode}_${rkey}_${mk}`;
+
+  $('tourney-overlay').classList.add('hidden');
+  $('start-overlay').classList.add('hidden');
+
+  gameCode = matchRoomCode; myRole = amP1 ? 'p1' : 'p2'; gameMode = 'versus';
+
+  if (amP1) {
+    await db.ref(`chick/dogs/${matchRoomCode}`).set({ phase: 'waiting', mode: 'versus' });
+    phaseRef = db.ref(`chick/dogs/${matchRoomCode}/phase`);
+    phaseRef.on('value', snap => {
+      if (snap.val() !== 'active') return;
+      phaseRef.off(); phaseRef = null;
+      isMultiplayer = true;
+      startListeningEvents();
+      startGame();
+      watchTourneyOpponentPresence();
+    });
+  } else {
+    const roomRef = db.ref(`chick/dogs/${matchRoomCode}`);
+    const waitForRoom = () => roomRef.once('value').then(snap => {
+      if (snap.exists() && snap.val().phase === 'waiting') return;
+      return new Promise(r => setTimeout(r, 300)).then(waitForRoom);
+    });
+    await waitForRoom();
+    await roomRef.update({ phase: 'active' });
+    isMultiplayer = true;
+    startListeningEvents();
+    startGame();
+    watchTourneyOpponentPresence();
+  }
+}
+
+function watchTourneyOpponentPresence() {
+  if (!tourneyOpponentId) return;
+  if (tourneyOppPresenceRef) tourneyOppPresenceRef.off();
+  tourneyOppPresenceRef = db.ref(`chick/tourneys/${tourneyCode}/players/${tourneyOpponentId}/connected`);
+  tourneyOppPresenceRef.on('value', snap => {
+    const connected = snap.val();
+    if (connected === false && gameRunning && tourneyInMatch) {
+      if (tourneyForfeitTimer) return;
+      tourneyForfeitTimer = setTimeout(() => {
+        tourneyForfeitTimer = null;
+        if (gameRunning && tourneyInMatch) forfeitWinByDisconnect();
+      }, 15000);
+    } else if (connected === true && tourneyForfeitTimer) {
+      clearTimeout(tourneyForfeitTimer);
+      tourneyForfeitTimer = null;
+    }
+  });
+}
+
+function forfeitWinByDisconnect() {
+  opponentScore = -1; // sentinel: guarantees a win regardless of our own score
+  endGame();
+}
+
+function reportTourneyResult(youWin) {
+  const winnerId = youWin ? myPlayerId : tourneyOpponentId;
+  if (tourneyCurrentMatchPath) db.ref(tourneyCurrentMatchPath).update({ winner: winnerId, status: 'done' }).catch(() => {});
+  if (gameCode) {
+    const roomToClean = gameCode;
+    setTimeout(() => db.ref(`chick/dogs/${roomToClean}`).remove().catch(() => {}), 5000);
+  }
+  if (tourneyOppPresenceRef) { tourneyOppPresenceRef.off(); tourneyOppPresenceRef = null; }
+  if (tourneyForfeitTimer) { clearTimeout(tourneyForfeitTimer); tourneyForfeitTimer = null; }
+  tourneyInMatch = false;
+  tourneyEliminated = !youWin;
+  tourneyCurrentMatchPath = null;
+  tourneyOpponentId = null;
+}
+
+async function maybeAdvanceRound(bracket) {
+  if (!amTourneyHost()) return;
+  if (bracket.champion) return;
+  const round = bracket.round;
+  const rkey = 'r' + round;
+  const roundData = bracket.rounds && bracket.rounds[rkey];
+  if (!roundData) return;
+  const matches = Object.values(roundData);
+  if (matches.length === 0 || !matches.every(m => m.winner)) return;
+
+  const rootRef = db.ref(`chick/tourneys/${tourneyCode}/bracket`);
+  const winners = Object.keys(roundData).sort().map(mk => roundData[mk].winner);
+
+  if (winners.length === 1) {
+    await rootRef.transaction(cur => {
+      if (!cur || cur.champion) return;
+      cur.champion = winners[0];
+      return cur;
+    });
+    return;
+  }
+
+  const nextKey = 'r' + (round + 1);
+  if (bracket.rounds[nextKey]) return;
+
+  const nextRoundMatches = {};
+  for (let i = 0; i < winners.length / 2; i++)
+    nextRoundMatches['m' + i] = { p1: winners[i * 2], p2: winners[i * 2 + 1], winner: null, status: 'pending' };
+
+  await rootRef.transaction(cur => {
+    if (!cur) return;
+    if (cur.rounds[nextKey]) return;
+    cur.round = round + 1;
+    cur.rounds[nextKey] = nextRoundMatches;
+    return cur;
+  });
+}
+
+function continueTourney() {
+  $('gameover-overlay').classList.add('hidden');
+  isMultiplayer = false; myRole = null; gameCode = null; gameMode = 'solo';
+  stopListeningEvents();
+  $('tourney-overlay').classList.remove('hidden');
+  $('tourney-lobby-panel').classList.add('hidden');
+  $('tourney-bracket-panel').classList.remove('hidden');
+}
+
+function leaveTournament() {
+  if (tourneyPlayersRef) { tourneyPlayersRef.off(); tourneyPlayersRef = null; }
+  if (tourneyBracketRef) { tourneyBracketRef.off(); tourneyBracketRef = null; }
+  if (tourneyOppPresenceRef) { tourneyOppPresenceRef.off(); tourneyOppPresenceRef = null; }
+  if (tourneyForfeitTimer) { clearTimeout(tourneyForfeitTimer); tourneyForfeitTimer = null; }
+  if (myPlayerId && tourneyCode) db.ref(`chick/tourneys/${tourneyCode}/players/${myPlayerId}`).remove().catch(() => {});
+  tourneyCode = null; myPlayerId = null; tourneyMyColor = null;
+  tourneyEliminated = false; tourneyInMatch = false;
+  $('tourney-overlay').classList.add('hidden');
+  $('mode-panel').classList.remove('hidden');
+  $('start-overlay').classList.remove('hidden');
 }
 
 buildShop();
